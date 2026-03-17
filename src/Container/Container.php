@@ -159,7 +159,7 @@ class Container implements ContainerInterface {
 	 *
 	 * @return void
 	 */
-	public function addContextualBinding( string $concrete, string $abstract, $implementation ): void {
+	public function add_contextual_binding( string $concrete, string $abstract, $implementation ): void {
 		$this->contextual[ $concrete ][ $abstract ] = $implementation;
 	}
 
@@ -291,7 +291,7 @@ class Container implements ContainerInterface {
 		}
 
 		$parameters   = $constructor->getParameters();
-		$dependencies = $this->resolveDependencies( $parameters, $concrete );
+		$dependencies = $this->resolve_dependencies( $parameters, $concrete );
 
 		unset( $this->resolving[ $concrete ] );
 
@@ -308,7 +308,7 @@ class Container implements ContainerInterface {
 	 *
 	 * @throws ContainerException If a parameter cannot be resolved.
 	 */
-	protected function resolveDependencies( array $parameters, string $concrete ): array {
+	protected function resolve_dependencies( array $parameters, string $concrete ): array {
 		$resolved = array();
 
 		foreach ( $parameters as $parameter ) {

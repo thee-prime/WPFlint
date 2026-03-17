@@ -67,6 +67,6 @@ class ContextualBindingBuilder {
 	 * @return void
 	 */
 	public function give( $implementation ): void {
-		$this->container->addContextualBinding( $this->concrete, $this->needs, $implementation );
+		$this->container->add_contextual_binding( $this->concrete, $this->needs, $implementation );
 	}
 }
