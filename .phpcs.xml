@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<ruleset name="WPFlint">
+    <description>WPFlint coding standards</description>
+
+    <file>src/</file>
+
+    <arg name="extensions" value="php"/>
+    <arg name="colors"/>
+    <arg value="sp"/>
+
+    <rule ref="WordPress">
+        <!-- Allow PSR-4 file naming -->
+        <exclude name="WordPress.Files.FileName"/>
+        <!-- Allow $abstract as parameter name — standard IoC container terminology -->
+        <exclude name="Universal.NamingConventions.NoReservedKeywordParameterNames"/>
+    </rule>
+
+    <!-- Minimum PHP version -->
+    <config name="minimum_wp_version" value="5.8"/>
+    <config name="testVersion" value="7.4-"/>
+</ruleset>
