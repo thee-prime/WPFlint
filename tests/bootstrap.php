@@ -13,5 +13,9 @@ if (! defined('WPINC')) {
     define('WPINC', 'wp-includes');
 }
 
+if (! defined('MINUTE_IN_SECONDS')) {
+    define('MINUTE_IN_SECONDS', 60);
+}
+
 // Initialize WP_Mock.
 WP_Mock::bootstrap();

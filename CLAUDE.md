@@ -94,15 +94,6 @@ class Order extends Model {
 }
 // Usage: Order::pending()->where('total','>',100)->get();
 
-### Cache
-Cache::tags(['orders'])->remember('key', 3600, fn() => Order::all());
-Cache::tags('orders')->flush();
-Cache::fresh()->remember('key', 3600, $cb); // bypass all tiers
-
-### Events
-Event::listen(OrderPlaced::class, SendConfirmation::class);
-Event::fire(new OrderPlaced($order));
-
 ## HTTP layer patterns
 
 ### Router registration (in a ServiceProvider boot())
@@ -203,6 +194,15 @@ class EnsureStoreIsOpen implements MiddlewareInterface {
     }
 }
 // Register: $app->make(Router::class)->aliasMiddleware('store.open', EnsureStoreIsOpen::class);
-```
+
+### Cache
+Cache::tags(['orders'])->remember('key', 3600, fn() => Order::all());
+Cache::tags('orders')->flush();
+Cache::fresh()->remember('key', 3600, $cb); // bypass all tiers
+
+### Events
+Event::listen(OrderPlaced::class, SendConfirmation::class);
+Event::fire(new OrderPlaced($order));
+
 
 
