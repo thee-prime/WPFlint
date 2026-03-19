@@ -1,0 +1,16 @@
+tests/
+vendor/
+.claude/
+src/Console/
+docs/
+composer.json
+composer.lock
+phpunit.xml
+phpcs.xml.dist
+.gitignore
+.distignore
+.phpunit.result.cache
+mcp-server/
+node_modules/
+CLAUDE.md
+AGENTS.md
