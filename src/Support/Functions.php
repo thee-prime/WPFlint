@@ -140,6 +140,25 @@ function log_message( string $message, array $context = array(), string $level =
 }
 
 /**
+ * Dispatch a job onto the queue.
+ *
+ * @param \WPFlint\Queue\Job $job The job instance to dispatch.
+ * @return int Inserted row ID.
+ */
+function dispatch_job( \WPFlint\Queue\Job $job ): int {
+	return Application::get_instance()->make( 'queue' )->dispatch( $job );
+}
+
+/**
+ * Get the Scheduler instance from the container.
+ *
+ * @return \WPFlint\Scheduling\Scheduler
+ */
+function scheduler(): \WPFlint\Scheduling\Scheduler {
+	return Application::get_instance()->make( 'scheduler' );
+}
+
+/**
  * Dump one or more values to the screen and halt execution (like Laravel's dd()).
  *
  * Output is wrapped in `<pre>` tags when HTTP headers have not yet been sent.

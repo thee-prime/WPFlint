@@ -81,6 +81,37 @@ if ( ! function_exists( 'wpflint_cache' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wpflint_schedule' ) ) {
+	/**
+	 * Get the Scheduler instance (or schedule a callable directly).
+	 *
+	 * With no arguments, returns the Scheduler for chaining.
+	 * With a callable, returns a new ScheduleEvent for fluent timing config.
+	 *
+	 * @param callable|null $callback Optional callback to schedule.
+	 * @return \WPFlint\Scheduling\Scheduler|\WPFlint\Scheduling\ScheduleEvent
+	 */
+	function wpflint_schedule( ?callable $callback = null ) {
+		$scheduler = \WPFlint\Support\scheduler();
+		if ( null !== $callback ) {
+			return $scheduler->call( $callback );
+		}
+		return $scheduler;
+	}
+}
+
+if ( ! function_exists( 'wpflint_dispatch' ) ) {
+	/**
+	 * Dispatch a job onto the queue.
+	 *
+	 * @param \WPFlint\Queue\Job $job The job instance to dispatch.
+	 * @return int Inserted row ID.
+	 */
+	function wpflint_dispatch( \WPFlint\Queue\Job $job ): int {
+		return \WPFlint\Support\dispatch_job( $job );
+	}
+}
+
 if ( ! function_exists( 'wpflint_log' ) ) {
 	/**
 	 * Write a log entry via the framework logger.

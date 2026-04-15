@@ -6,7 +6,8 @@
  * Tools: wpflint_make_migration, wpflint_make_model, wpflint_make_provider, wpflint_make_controller,
  *        wpflint_make_middleware, wpflint_make_request, wpflint_make_event, wpflint_make_facade,
  *        wpflint_make_listener, wpflint_make_command, wpflint_make_rule,
- *        wpflint_logging_usage, wpflint_scaffold_plugin
+ *        wpflint_logging_usage, wpflint_make_job, wpflint_schedule_usage,
+ *        wpflint_scaffold_plugin
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -652,6 +653,105 @@ wpflint_dd( $someVariable, $anotherVariable );
 
 ### entry format
 \`[YYYY-MM-DD HH:MM:SS] ${channel}.LEVEL: Interpolated message {context_json?}\`
+`;
+    return { content: [{ type: "text", text }] };
+  }
+);
+
+server.tool(
+  "wpflint_make_job",
+  "Generate a WPFlint job stub for the async queue.",
+  {
+    name: z.string().describe("Job class name in PascalCase, e.g. SendWelcomeEmail"),
+    queue: z.string().optional().default("default").describe("Queue name"),
+    tries: z.number().optional().default(3).describe("Max retry attempts"),
+  },
+  async ({ name, queue, tries }) => {
+    const content = `<?php
+
+declare(strict_types=1);
+
+use WPFlint\\Queue\\Job;
+
+class ${name} extends Job {
+
+\tprotected string $queue        = '${queue}';
+\tprotected int    $max_attempts = ${tries};
+
+\t/**
+\t * Execute the job.
+\t *
+\t * @return void
+\t */
+\tpublic function handle(): void {
+\t\t// TODO: implement job logic.
+\t}
+
+\t/**
+\t * Handle a job failure after all retries are exhausted.
+\t *
+\t * @param \\Throwable $exception The last exception thrown.
+\t * @return void
+\t */
+\tpublic function failed( \\Throwable $exception ): void {
+\t\t// TODO: alert / compensate on permanent failure.
+\t}
+}
+`;
+    return {
+      content: [{
+        type: "text",
+        text: `**Filename:** \`app/Jobs/${name}.php\`\n\n\`\`\`php\n${content}\`\`\``,
+      }],
+    };
+  }
+);
+
+server.tool(
+  "wpflint_schedule_usage",
+  "Show WPFlint Scheduler setup and usage examples.",
+  {
+    plugin_slug: z.string().optional().default("my-plugin").describe("Plugin slug for examples"),
+  },
+  async ({ plugin_slug }) => {
+    const text = `## WPFlint Scheduler — ${plugin_slug}
+
+### register provider
+\`\`\`php
+use WPFlint\\Scheduling\\SchedulerServiceProvider;
+$app->register( SchedulerServiceProvider::class );
+\`\`\`
+
+### define schedule (in a ServiceProvider boot())
+\`\`\`php
+$scheduler = $this->app->make( 'scheduler' );
+
+// Callable
+$scheduler->call( fn() => clean_expired_transients() )
+          ->name( '${plugin_slug}_cleanup' )
+          ->daily();
+
+// Job class (dispatched to queue)
+$scheduler->job( GenerateReportJob::class )
+          ->name( '${plugin_slug}_report' )
+          ->weekly();
+
+// Helper
+wpflint_schedule( fn() => sync_inventory() )
+    ->name( '${plugin_slug}_inventory_sync' )
+    ->every_thirty_minutes();
+\`\`\`
+
+### deactivation cleanup
+\`\`\`php
+register_deactivation_hook( __FILE__, function() use ($app) {
+    $app->make( 'scheduler' )->unschedule_all();
+});
+\`\`\`
+
+### intervals
+every_minute · every_five_minutes · every_ten_minutes · every_fifteen_minutes
+every_thirty_minutes · hourly · every_hours(N) · twice_daily · daily · weekly · monthly
 `;
     return { content: [{ type: "text", text }] };
   }
