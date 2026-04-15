@@ -9,10 +9,13 @@ declare(strict_types=1);
 
 namespace WPFlint\Http;
 
+use WPFlint\Validation\Validator;
+
 /**
  * Base request class with validation engine.
  *
  * Subclass to define rules(), sanitize(), and authorize().
+ * Validation is delegated to WPFlint\Validation\Validator internally.
  */
 class Request {
 
@@ -163,7 +166,7 @@ class Request {
 	/**
 	 * Define validation rules. Override in subclass.
 	 *
-	 * @return array<string, string>
+	 * @return array<string, string|array>
 	 */
 	public function rules(): array {
 		return array();
@@ -188,26 +191,25 @@ class Request {
 	}
 
 	/**
-	 * Run validation and sanitization.
+	 * Run validation (delegated to Validator) and apply sanitization.
 	 *
 	 * @return bool True if valid.
 	 */
 	public function validate(): bool {
-		$this->errors         = array();
-		$this->validated_data = array();
-
 		$rules = $this->rules();
 
 		if ( empty( $rules ) ) {
 			$this->validated_data = $this->data;
+			$this->errors         = array();
 			return true;
 		}
 
-		foreach ( $rules as $field => $rule_string ) {
-			$this->validate_field( $field, $rule_string );
-		}
+		$result = Validator::make( $this->data, $rules );
 
-		if ( ! empty( $this->errors ) ) {
+		$this->errors         = $result->errors();
+		$this->validated_data = $result->validated();
+
+		if ( $result->fails() ) {
 			return false;
 		}
 
@@ -216,284 +218,9 @@ class Request {
 	}
 
 	/**
-	 * Validate a single field against its rules.
-	 *
-	 * @param string $field       Field name (supports dot notation and wildcards).
-	 * @param string $rule_string Pipe-separated rules.
-	 */
-	protected function validate_field( string $field, string $rule_string ): void {
-		$rules = explode( '|', $rule_string );
-
-		if ( false !== strpos( $field, '*' ) ) {
-			$this->validate_wildcard_field( $field, $rules );
-			return;
-		}
-
-		$value    = $this->array_get( $this->data, $field );
-		$nullable = in_array( 'nullable', $rules, true );
-
-		if ( $nullable && null === $value ) {
-			$this->array_set( $this->validated_data, $field, $value );
-			return;
-		}
-
-		foreach ( $rules as $rule ) {
-			if ( 'nullable' === $rule ) {
-				continue;
-			}
-
-			$error = $this->apply_rule( $field, $value, $rule );
-			if ( null !== $error ) {
-				$this->errors[ $field ] = $error;
-				return;
-			}
-		}
-
-		$this->array_set( $this->validated_data, $field, $value );
-	}
-
-	/**
-	 * Validate wildcard fields (e.g. items.*.product_id).
-	 *
-	 * @param string   $pattern Dot-notated pattern with *.
-	 * @param string[] $rules   Parsed rules.
-	 */
-	protected function validate_wildcard_field( string $pattern, array $rules ): void {
-		$expanded = $this->expand_wildcard( $pattern, $this->data );
-
-		foreach ( $expanded as $concrete_field ) {
-			$value    = $this->array_get( $this->data, $concrete_field );
-			$nullable = in_array( 'nullable', $rules, true );
-
-			if ( $nullable && null === $value ) {
-				$this->array_set( $this->validated_data, $concrete_field, $value );
-				continue;
-			}
-
-			foreach ( $rules as $rule ) {
-				if ( 'nullable' === $rule ) {
-					continue;
-				}
-
-				$error = $this->apply_rule( $concrete_field, $value, $rule );
-				if ( null !== $error ) {
-					$this->errors[ $concrete_field ] = $error;
-					break;
-				}
-			}
-
-			if ( ! isset( $this->errors[ $concrete_field ] ) ) {
-				$this->array_set( $this->validated_data, $concrete_field, $value );
-			}
-		}
-	}
-
-	/**
-	 * Apply a single rule to a value.
-	 *
-	 * @param string $field Field name.
-	 * @param mixed  $value Field value.
-	 * @param string $rule  Rule string (e.g. 'required', 'min:5', 'in:a,b,c').
-	 * @return string|null Error message or null if valid.
-	 */
-	protected function apply_rule( string $field, $value, string $rule ): ?string {
-		$parts = explode( ':', $rule, 2 );
-		$name  = $parts[0];
-		$param = $parts[1] ?? null;
-
-		switch ( $name ) {
-			case 'required':
-				if ( null === $value || '' === $value ) {
-					return sprintf(
-						/* translators: %s: field name */
-						__( 'The %s field is required.', 'wpflint' ),
-						$field
-					);
-				}
-				break;
-
-			case 'string':
-				if ( null !== $value && ! is_string( $value ) ) {
-					return sprintf(
-						/* translators: %s: field name */
-						__( 'The %s field must be a string.', 'wpflint' ),
-						$field
-					);
-				}
-				break;
-
-			case 'integer':
-				if ( null !== $value && ! is_numeric( $value ) ) {
-					return sprintf(
-						/* translators: %s: field name */
-						__( 'The %s field must be an integer.', 'wpflint' ),
-						$field
-					);
-				}
-				if ( null !== $value && (string) (int) $value !== (string) $value ) {
-					return sprintf(
-						/* translators: %s: field name */
-						__( 'The %s field must be an integer.', 'wpflint' ),
-						$field
-					);
-				}
-				break;
-
-			case 'numeric':
-				if ( null !== $value && ! is_numeric( $value ) ) {
-					return sprintf(
-						/* translators: %s: field name */
-						__( 'The %s field must be numeric.', 'wpflint' ),
-						$field
-					);
-				}
-				break;
-
-			case 'email':
-				if ( null !== $value && ! is_email( $value ) ) {
-					return sprintf(
-						/* translators: %s: field name */
-						__( 'The %s field must be a valid email.', 'wpflint' ),
-						$field
-					);
-				}
-				break;
-
-			case 'url':
-				if ( null !== $value && false === filter_var( $value, FILTER_VALIDATE_URL ) ) {
-					return sprintf(
-						/* translators: %s: field name */
-						__( 'The %s field must be a valid URL.', 'wpflint' ),
-						$field
-					);
-				}
-				break;
-
-			case 'min':
-				return $this->validate_min( $field, $value, $param );
-
-			case 'max':
-				return $this->validate_max( $field, $value, $param );
-
-			case 'in':
-				$allowed = explode( ',', $param );
-				if ( null !== $value && ! in_array( (string) $value, $allowed, true ) ) {
-					return sprintf(
-						/* translators: 1: field name 2: allowed values */
-						__( 'The %1$s field must be one of: %2$s.', 'wpflint' ),
-						$field,
-						$param
-					);
-				}
-				break;
-
-			case 'array':
-				if ( null !== $value && ! is_array( $value ) ) {
-					return sprintf(
-						/* translators: %s: field name */
-						__( 'The %s field must be an array.', 'wpflint' ),
-						$field
-					);
-				}
-				break;
-
-			case 'boolean':
-				$booleans = array( true, false, 0, 1, '0', '1' );
-				if ( null !== $value && ! in_array( $value, $booleans, true ) ) {
-					return sprintf(
-						/* translators: %s: field name */
-						__( 'The %s field must be a boolean.', 'wpflint' ),
-						$field
-					);
-				}
-				break;
-		}
-
-		return null;
-	}
-
-	/**
-	 * Validate min rule.
-	 *
-	 * @param string $field Field name.
-	 * @param mixed  $value Field value.
-	 * @param string $param Min parameter.
-	 * @return string|null Error or null.
-	 */
-	protected function validate_min( string $field, $value, string $param ): ?string {
-		$min = (float) $param;
-
-		if ( is_array( $value ) ) {
-			$item_count = count( $value );
-			if ( $item_count < $min ) {
-				return sprintf(
-					/* translators: 1: field name 2: minimum count */
-					__( 'The %1$s field must have at least %2$s items.', 'wpflint' ),
-					$field,
-					$param
-				);
-			}
-		} elseif ( is_numeric( $value ) && (float) $value < $min ) {
-			return sprintf(
-				/* translators: 1: field name 2: minimum value */
-				__( 'The %1$s field must be at least %2$s.', 'wpflint' ),
-				$field,
-				$param
-			);
-		} elseif ( is_string( $value ) && strlen( $value ) < (int) $min ) {
-			return sprintf(
-				/* translators: 1: field name 2: minimum length */
-				__( 'The %1$s field must be at least %2$s characters.', 'wpflint' ),
-				$field,
-				$param
-			);
-		}
-
-		return null;
-	}
-
-	/**
-	 * Validate max rule.
-	 *
-	 * @param string $field Field name.
-	 * @param mixed  $value Field value.
-	 * @param string $param Max parameter.
-	 * @return string|null Error or null.
-	 */
-	protected function validate_max( string $field, $value, string $param ): ?string {
-		$max = (float) $param;
-
-		if ( is_array( $value ) ) {
-			$item_count = count( $value );
-			if ( $item_count > $max ) {
-				return sprintf(
-					/* translators: 1: field name 2: maximum count */
-					__( 'The %1$s field must not have more than %2$s items.', 'wpflint' ),
-					$field,
-					$param
-				);
-			}
-		} elseif ( is_numeric( $value ) && (float) $value > $max ) {
-			return sprintf(
-				/* translators: 1: field name 2: maximum value */
-				__( 'The %1$s field must not be greater than %2$s.', 'wpflint' ),
-				$field,
-				$param
-			);
-		} elseif ( is_string( $value ) && strlen( $value ) > (int) $max ) {
-			return sprintf(
-				/* translators: 1: field name 2: maximum length */
-				__( 'The %1$s field must not be greater than %2$s characters.', 'wpflint' ),
-				$field,
-				$param
-			);
-		}
-
-		return null;
-	}
-
-	/**
 	 * Apply sanitization callbacks to validated data.
+	 *
+	 * @return void
 	 */
 	protected function apply_sanitization(): void {
 		$sanitizers = $this->sanitize();
@@ -501,7 +228,10 @@ class Request {
 		foreach ( $sanitizers as $field => $callback ) {
 			$value = $this->array_get( $this->validated_data, $field );
 			if ( null !== $value ) {
-				$this->array_set( $this->validated_data, $field, $callback( $value ) );
+				$sanitized = is_string( $callback )
+					? call_user_func( $callback, $value )
+					: $callback( $value );
+				$this->array_set( $this->validated_data, $field, $sanitized );
 			}
 		}
 	}
@@ -533,12 +263,13 @@ class Request {
 	 * @param array  $array Target array (passed by reference).
 	 * @param string $key   Dot-notated key.
 	 * @param mixed  $value Value to set.
+	 * @return void
 	 */
 	protected function array_set( array &$array, string $key, $value ): void {
-		$segments = explode( '.', $key );
-		$current  = &$array;
-
+		$segments      = explode( '.', $key );
+		$current       = &$array;
 		$segment_count = count( $segments );
+
 		for ( $i = 0; $i < $segment_count; $i++ ) {
 			$segment = $segments[ $i ];
 
@@ -551,50 +282,5 @@ class Request {
 				$current = &$current[ $segment ];
 			}
 		}
-	}
-
-	/**
-	 * Expand a wildcard pattern into concrete field paths.
-	 *
-	 * @param string $pattern Dot-notated pattern with *.
-	 * @param array  $data    Source data.
-	 * @return string[] Concrete field paths.
-	 */
-	protected function expand_wildcard( string $pattern, array $data ): array {
-		$segments = explode( '.', $pattern );
-		return $this->expand_segments( $segments, $data, '' );
-	}
-
-	/**
-	 * Recursively expand pattern segments.
-	 *
-	 * @param string[] $segments Remaining segments.
-	 * @param mixed    $data     Current data level.
-	 * @param string   $prefix   Current path prefix.
-	 * @return string[]
-	 */
-	protected function expand_segments( array $segments, $data, string $prefix ): array {
-		if ( empty( $segments ) ) {
-			return array( rtrim( $prefix, '.' ) );
-		}
-
-		$segment = array_shift( $segments );
-		$paths   = array();
-
-		if ( '*' === $segment ) {
-			if ( ! is_array( $data ) ) {
-				return array();
-			}
-			foreach ( array_keys( $data ) as $index ) {
-				$new_prefix = $prefix . $index . '.';
-				$paths      = array_merge( $paths, $this->expand_segments( $segments, $data[ $index ], $new_prefix ) );
-			}
-		} else {
-			$new_prefix = $prefix . $segment . '.';
-			$next_data  = is_array( $data ) && array_key_exists( $segment, $data ) ? $data[ $segment ] : null;
-			$paths      = $this->expand_segments( $segments, $next_data, $new_prefix );
-		}
-
-		return $paths;
 	}
 }

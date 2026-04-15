@@ -80,3 +80,29 @@ if ( ! function_exists( 'wpflint_cache' ) ) {
 		return \WPFlint\Support\cache_manager( $tags );
 	}
 }
+
+if ( ! function_exists( 'wpflint_log' ) ) {
+	/**
+	 * Write a log entry via the framework logger.
+	 *
+	 * @param string               $message Log message (supports {placeholder} interpolation).
+	 * @param array<string, mixed> $context Interpolation context.
+	 * @param string               $level   PSR-3 level. Default: debug.
+	 * @return void
+	 */
+	function wpflint_log( string $message, array $context = array(), string $level = \WPFlint\Logging\LogLevel::DEBUG ): void {
+		\WPFlint\Support\log_message( $message, $context, $level );
+	}
+}
+
+if ( ! function_exists( 'wpflint_dd' ) ) {
+	/**
+	 * Dump one or more values and halt execution (development utility).
+	 *
+	 * @param mixed ...$values Values to dump.
+	 * @return void
+	 */
+	function wpflint_dd( ...$values ): void {
+		\WPFlint\Support\dump_and_die( ...$values );
+	}
+}

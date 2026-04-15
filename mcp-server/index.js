@@ -5,7 +5,7 @@
  * Exposes scaffolding tools for WPFlint projects via Model Context Protocol.
  * Tools: wpflint_make_migration, wpflint_make_model, wpflint_make_provider, wpflint_make_controller,
  *        wpflint_make_middleware, wpflint_make_request, wpflint_make_event, wpflint_make_facade,
- *        wpflint_make_listener, wpflint_make_command, wpflint_scaffold_plugin
+ *        wpflint_make_listener, wpflint_make_command, wpflint_make_rule, wpflint_scaffold_plugin
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -288,6 +288,40 @@ class ${name} extends Command {
 `;
 }
 
+function ruleStub(name) {
+  return `<?php
+
+declare(strict_types=1);
+
+use WPFlint\\Validation\\Rules\\RuleInterface;
+
+class ${name} implements RuleInterface {
+
+\t/**
+\t * Determine if the given value passes this rule.
+\t *
+\t * @param mixed $value The value being validated.
+\t * @return bool
+\t */
+\tpublic function passes( $value ): bool {
+\t\t// TODO: implement rule logic.
+\t\treturn true;
+\t}
+
+\t/**
+\t * Return the validation error message.
+\t *
+\t * Use :attribute as a placeholder for the field name.
+\t *
+\t * @return string
+\t */
+\tpublic function message(): string {
+\t\treturn __( 'The :attribute field is invalid.', 'text-domain' );
+\t}
+}
+`;
+}
+
 function scaffoldPlugin(slug, namespace) {
   const mainFile = `<?php
 /**
@@ -550,6 +584,25 @@ server.tool(
         {
           type: "text",
           text: `**Filename:** \`app/Console/${name}.php\`\n\n\`\`\`php\n${content}\`\`\``,
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "wpflint_make_rule",
+  "Generate a custom validation rule stub implementing RuleInterface.",
+  {
+    name: z.string().describe("Rule class name in PascalCase, e.g. UniqueEmail or PhoneNumber"),
+  },
+  async ({ name }) => {
+    const content = ruleStub(name);
+    return {
+      content: [
+        {
+          type: "text",
+          text: `**Filename:** \`app/Rules/${name}.php\`\n\n\`\`\`php\n${content}\`\`\``,
         },
       ],
     };

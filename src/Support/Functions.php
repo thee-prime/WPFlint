@@ -113,3 +113,59 @@ function cache_manager( $tags = null ) {
 
 	return $cache;
 }
+
+/**
+ * Get the Logger instance from the container.
+ *
+ * @return \WPFlint\Logging\LoggerInterface
+ */
+function logger_instance(): \WPFlint\Logging\LoggerInterface {
+	try {
+		return Application::get_instance()->make( 'logger' );
+	} catch ( \Exception $e ) {
+		return new \WPFlint\Logging\NullLogger();
+	}
+}
+
+/**
+ * Write a log entry via the registered logger.
+ *
+ * @param string               $message Log message (supports {placeholder} interpolation).
+ * @param array<string, mixed> $context Context values for interpolation.
+ * @param string               $level   PSR-3 log level. Default: debug.
+ * @return void
+ */
+function log_message( string $message, array $context = array(), string $level = \WPFlint\Logging\LogLevel::DEBUG ): void {
+	logger_instance()->log( $level, $message, $context );
+}
+
+/**
+ * Dump one or more values to the screen and halt execution (like Laravel's dd()).
+ *
+ * Output is wrapped in `<pre>` tags when HTTP headers have not yet been sent.
+ * In CLI / WP-CLI contexts the output is plain text.
+ *
+ * This function is intentionally a development/debug utility.
+ *
+ * @param mixed ...$values Values to dump.
+ * @return void
+ */
+function dump_and_die( ...$values ): void {
+	// phpcs:disable WordPress.PHP.DevelopmentFunctions.error_log_var_dump, WordPress.Security.EscapeOutput.OutputNotEscaped
+	$is_html = ! headers_sent() && 'cli' !== PHP_SAPI;
+
+	if ( $is_html ) {
+		echo '<pre style="background:#1e1e2e;color:#cdd6f4;padding:16px;border-radius:6px;font-size:13px;line-height:1.5;overflow:auto;">';
+	}
+
+	foreach ( $values as $value ) {
+		var_dump( $value );
+	}
+
+	if ( $is_html ) {
+		echo '</pre>';
+	}
+	// phpcs:enable
+
+	die( 1 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- debug utility, intentional halt.
+}
