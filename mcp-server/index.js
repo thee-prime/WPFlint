@@ -5,7 +5,7 @@
  * Exposes scaffolding tools for WPFlint projects via Model Context Protocol.
  * Tools: wpflint_make_migration, wpflint_make_model, wpflint_make_provider, wpflint_make_controller,
  *        wpflint_make_middleware, wpflint_make_request, wpflint_make_event, wpflint_make_facade,
- *        wpflint_scaffold_plugin
+ *        wpflint_make_listener, wpflint_make_command, wpflint_scaffold_plugin
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -228,6 +228,61 @@ class ${name} extends Facade {
 
 \tprotected static function get_facade_accessor(): string {
 \t\treturn '';
+\t}
+}
+`;
+}
+
+function listenerStub(name, event) {
+  const typeHint = event ? `${event} $event` : '$event';
+  const useEvent = event ? `\nuse ${event};\n` : '';
+  return `<?php
+
+declare(strict_types=1);
+${useEvent}
+class ${name} {
+
+\t/**
+\t * Handle the event.
+\t *
+\t * @param ${typeHint}
+\t * @return void
+\t */
+\tpublic function handle( ${typeHint} ): void {
+\t\t//
+\t}
+}
+`;
+}
+
+function commandStub(name) {
+  const commandName = snakeCase(name.replace(/Command$/, ''));
+  return `<?php
+
+declare(strict_types=1);
+
+use WPFlint\\Console\\Command;
+
+/**
+ * ## EXAMPLES
+ *
+ *     wp wpflint ${commandName}
+ */
+class ${name} extends Command {
+
+\t/**
+\t * Execute the command.
+\t *
+\t * @param array $args       Positional arguments.
+\t * @param array $assoc_args Associative arguments.
+\t * @return void
+\t */
+\tpublic function __invoke( array $args, array $assoc_args ): void {
+\t\t$this->info( __( 'Running ${commandName}...', 'text-domain' ) );
+
+\t\t// TODO: implement command logic.
+
+\t\t$this->success( __( 'Done.', 'text-domain' ) );
 \t}
 }
 `;
@@ -456,6 +511,45 @@ server.tool(
         {
           type: "text",
           text: `**Filename:** \`app/Facades/${name}.php\`\n\n\`\`\`php\n${content}\`\`\``,
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "wpflint_make_listener",
+  "Generate a WPFlint event listener stub with a handle() method.",
+  {
+    name: z.string().describe("Listener class name in PascalCase, e.g. SendOrderConfirmation"),
+    event: z.string().optional().default("").describe("Event class to type-hint in handle(), e.g. OrderPlaced"),
+  },
+  async ({ name, event }) => {
+    const content = listenerStub(name, event);
+    return {
+      content: [
+        {
+          type: "text",
+          text: `**Filename:** \`app/Listeners/${name}.php\`\n\n\`\`\`php\n${content}\`\`\``,
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "wpflint_make_command",
+  "Generate a custom WP-CLI command stub extending WPFlint Command.",
+  {
+    name: z.string().describe("Command class name in PascalCase, e.g. SyncInventoryCommand"),
+  },
+  async ({ name }) => {
+    const content = commandStub(name);
+    return {
+      content: [
+        {
+          type: "text",
+          text: `**Filename:** \`app/Console/${name}.php\`\n\n\`\`\`php\n${content}\`\`\``,
         },
       ],
     };

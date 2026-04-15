@@ -102,6 +102,29 @@ wp wpflint make:facade Order --path=app/Facades
 
 Generates a class extending `Facade` with a `get_facade_accessor()` method.
 
+### make:listener
+
+Generate an event listener stub.
+
+```bash
+wp wpflint make:listener SendOrderConfirmation
+wp wpflint make:listener SendOrderConfirmation --event=OrderPlaced
+wp wpflint make:listener SendOrderConfirmation --path=app/Listeners
+```
+
+With `--event=OrderPlaced`, the generated `handle()` method is type-hinted with the event class.
+
+### make:command
+
+Generate a custom WP-CLI command stub.
+
+```bash
+wp wpflint make:command SyncInventoryCommand
+wp wpflint make:command SyncInventoryCommand --path=app/Console
+```
+
+Generates a class extending `WPFlint\Console\Command` with a pre-filled `__invoke()` method and WP-CLI doc block.
+
 ### cache:clear
 
 Clear the application cache.

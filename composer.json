@@ -18,7 +18,11 @@
   "autoload": {
     "psr-4": {
       "WPFlint\\": "src/"
-    }
+    },
+    "files": [
+      "src/Support/Functions.php",
+      "src/Support/helpers.php"
+    ]
   },
   "autoload-dev": {
     "psr-4": {

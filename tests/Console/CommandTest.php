@@ -16,6 +16,9 @@ use WPFlint\Console\MakeFacadeCommand;
 use WPFlint\Console\MakeMigrationCommand;
 use WPFlint\Console\MakeModelCommand;
 use WPFlint\Console\MakeProviderCommand;
+use WPFlint\Console\MakeListenerCommand;
+use WPFlint\Console\MakeCommandCommand;
+use WPFlint\Console\MakeHelperCommand;
 use WPFlint\Console\CacheClearCommand;
 use WPFlint\Console\MigrateCommand;
 use WPFlint\Cache\CacheManager;
@@ -33,6 +36,9 @@ use WPFlint\Database\Migrations\MigrationRepository;
  * @covers \WPFlint\Console\MakeMigrationCommand
  * @covers \WPFlint\Console\MakeModelCommand
  * @covers \WPFlint\Console\MakeProviderCommand
+ * @covers \WPFlint\Console\MakeListenerCommand
+ * @covers \WPFlint\Console\MakeCommandCommand
+ * @covers \WPFlint\Console\MakeHelperCommand
  * @covers \WPFlint\Console\CacheClearCommand
  * @covers \WPFlint\Console\MigrateCommand
  */
@@ -284,6 +290,97 @@ class CommandTest extends TestCase {
 		$this->assertStringContainsString( 'class OrderServiceProvider extends ServiceProvider', $content );
 		$this->assertStringContainsString( 'public function register(): void', $content );
 		$this->assertStringContainsString( 'public function boot(): void', $content );
+	}
+
+	// -------------------------------------------------------------------------
+	// MakeListenerCommand
+	// -------------------------------------------------------------------------
+
+	public function testMakeListenerGeneratesListener(): void {
+		$cmd = new MakeListenerCommand();
+		$cmd->__invoke(
+			array( 'SendOrderConfirmation' ),
+			array( 'path' => $this->relative_path() . '/app/Listeners' )
+		);
+
+		$file    = $this->tmp_dir . '/app/Listeners/SendOrderConfirmation.php';
+		$content = file_get_contents( $file );
+		$this->assertStringContainsString( 'class SendOrderConfirmation', $content );
+		$this->assertStringContainsString( 'public function handle(', $content );
+	}
+
+	public function testMakeListenerWithEventTypeHint(): void {
+		$cmd = new MakeListenerCommand();
+		$cmd->__invoke(
+			array( 'SendOrderConfirmation' ),
+			array(
+				'path'  => $this->relative_path() . '/app/Listeners',
+				'event' => 'OrderPlaced',
+			)
+		);
+
+		$file    = $this->tmp_dir . '/app/Listeners/SendOrderConfirmation.php';
+		$content = file_get_contents( $file );
+		$this->assertStringContainsString( 'use OrderPlaced', $content );
+		$this->assertStringContainsString( 'OrderPlaced $event', $content );
+	}
+
+	// -------------------------------------------------------------------------
+	// MakeCommandCommand
+	// -------------------------------------------------------------------------
+
+	public function testMakeCommandGeneratesCommand(): void {
+		$cmd = new MakeCommandCommand();
+		$cmd->__invoke(
+			array( 'SyncInventoryCommand' ),
+			array( 'path' => $this->relative_path() . '/app/Console' )
+		);
+
+		$file    = $this->tmp_dir . '/app/Console/SyncInventoryCommand.php';
+		$content = file_get_contents( $file );
+		$this->assertStringContainsString( 'class SyncInventoryCommand extends Command', $content );
+		$this->assertStringContainsString( 'public function __invoke(', $content );
+		$this->assertStringContainsString( 'sync_inventory', $content );
+	}
+
+	// -------------------------------------------------------------------------
+	// MakeHelperCommand
+	// -------------------------------------------------------------------------
+
+	public function testMakeHelperGeneratesFileWithPrefix(): void {
+		$cmd = new MakeHelperCommand();
+		$cmd->__invoke(
+			array(),
+			array(
+				'prefix' => 'zplane',
+				'path'   => $this->relative_path() . '/app',
+			)
+		);
+
+		$file    = $this->tmp_dir . '/app/helpers.php';
+		$content = file_get_contents( $file );
+		$this->assertStringContainsString( 'function zplane_config(', $content );
+		$this->assertStringContainsString( 'function zplane_app(', $content );
+		$this->assertStringContainsString( 'function zplane_env(', $content );
+		$this->assertStringContainsString( 'function zplane_event(', $content );
+		$this->assertStringContainsString( 'function zplane_cache(', $content );
+		$this->assertStringContainsString( 'WPFlint\\Support\\config_value', $content );
+	}
+
+	public function testMakeHelperErrorsWithoutPrefix(): void {
+		$cmd = new MakeHelperCommand();
+		\WP_CLI::reset();
+
+		$cmd->__invoke( array(), array() );
+
+		$captured = \WP_CLI::$captured;
+		$hasError = false;
+		foreach ( $captured as $entry ) {
+			if ( 'error' === $entry[0] ) {
+				$hasError = true;
+			}
+		}
+		$this->assertTrue( $hasError );
 	}
 
 	// -------------------------------------------------------------------------
