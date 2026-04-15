@@ -7,7 +7,8 @@
  *        wpflint_make_middleware, wpflint_make_request, wpflint_make_event, wpflint_make_facade,
  *        wpflint_make_listener, wpflint_make_command, wpflint_make_rule,
  *        wpflint_logging_usage, wpflint_make_job, wpflint_schedule_usage,
- *        wpflint_scaffold_plugin
+ *        wpflint_scaffold_plugin, wpflint_make_post_type, wpflint_make_taxonomy,
+ *        wpflint_make_meta_field
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -775,6 +776,88 @@ server.tool(
         text += `**\`${path}\`**\n\n\`\`\`${lang}\n${content}\`\`\`\n\n`;
       }
     }
+    return { content: [{ type: "text", text }] };
+  }
+);
+
+server.tool(
+  "wpflint_make_post_type",
+  "Generate a fluent PostType registration snippet for WPFlint.",
+  {
+    slug: z.string().describe("Post type slug, e.g. book"),
+    singular: z.string().describe("Singular label, e.g. Book"),
+    plural: z.string().optional().describe("Plural label, e.g. Books (defaults to singular + s)"),
+    public: z.boolean().optional().default(true).describe("Make the post type public"),
+    show_in_rest: z.boolean().optional().default(true).describe("Expose via REST API"),
+    supports: z.array(z.string()).optional().describe("Supported features, e.g. ['title','editor']"),
+    icon: z.string().optional().describe("Dashicon or URL for the menu icon"),
+  },
+  async ({ slug, singular, plural, public: pub, show_in_rest, supports, icon }) => {
+    const p = plural || singular + "s";
+    const feats = supports && supports.length
+      ? `\n        ->supports( [ '${supports.join("', '")}' ] )`
+      : "";
+    const ico = icon ? `\n        ->icon( '${icon}' )` : "";
+    const rest = show_in_rest ? "\n        ->show_in_rest()" : "";
+    const pub_ = pub ? "\n        ->public()" : "";
+    const text = `PostType::make( '${slug}' )
+        ->label( '${singular}', '${p}' )${pub_}${feats}${ico}${rest}
+        ->register();`;
+    return { content: [{ type: "text", text }] };
+  }
+);
+
+server.tool(
+  "wpflint_make_taxonomy",
+  "Generate a fluent Taxonomy registration snippet for WPFlint.",
+  {
+    slug: z.string().describe("Taxonomy slug, e.g. genre"),
+    singular: z.string().describe("Singular label, e.g. Genre"),
+    plural: z.string().optional().describe("Plural label (defaults to singular + s)"),
+    post_types: z.array(z.string()).describe("Post type slug(s) to attach, e.g. ['book']"),
+    hierarchical: z.boolean().optional().default(false).describe("Hierarchical like categories"),
+    show_in_rest: z.boolean().optional().default(true).describe("Expose via REST API"),
+  },
+  async ({ slug, singular, plural, post_types, hierarchical, show_in_rest }) => {
+    const p = plural || singular + "s";
+    const pts = post_types.map((t) => `'${t}'`).join(", ");
+    const hier = hierarchical ? "\n        ->hierarchical()" : "";
+    const rest = show_in_rest ? "\n        ->show_in_rest()" : "";
+    const text = `Taxonomy::make( '${slug}' )
+        ->label( '${singular}', '${p}' )
+        ->for( [ ${pts} ] )${hier}${rest}
+        ->register();`;
+    return { content: [{ type: "text", text }] };
+  }
+);
+
+server.tool(
+  "wpflint_make_meta_field",
+  "Generate a fluent MetaField registration snippet for WPFlint.",
+  {
+    object_type: z.enum(["post", "term", "user", "comment"]).describe("Meta object type"),
+    subtype: z.string().optional().default("").describe("Post type or taxonomy slug (empty for user/comment)"),
+    key: z.string().describe("Meta key, e.g. _price"),
+    type: z.string().optional().default("string").describe("Value type: string, boolean, integer, number, array, object"),
+    single: z.boolean().optional().default(true).describe("Single value field"),
+    show_in_rest: z.boolean().optional().default(false).describe("Expose via REST API"),
+  },
+  async ({ object_type, subtype, key, type, single, show_in_rest }) => {
+    let factory;
+    if (object_type === "post") {
+      factory = `MetaField::post( '${subtype}', '${key}' )`;
+    } else if (object_type === "term") {
+      factory = `MetaField::term( '${subtype}', '${key}' )`;
+    } else if (object_type === "user") {
+      factory = `MetaField::user( '${key}' )`;
+    } else {
+      factory = `MetaField::comment( '${key}' )`;
+    }
+    const typ = type ? `\n        ->type( '${type}' )` : "";
+    const sing = single ? "\n        ->single()" : "";
+    const rest = show_in_rest ? "\n        ->show_in_rest()" : "";
+    const text = `${factory}${typ}${sing}${rest}
+        ->register();`;
     return { content: [{ type: "text", text }] };
   }
 );
