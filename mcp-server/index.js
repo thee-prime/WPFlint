@@ -5,7 +5,8 @@
  * Exposes scaffolding tools for WPFlint projects via Model Context Protocol.
  * Tools: wpflint_make_migration, wpflint_make_model, wpflint_make_provider, wpflint_make_controller,
  *        wpflint_make_middleware, wpflint_make_request, wpflint_make_event, wpflint_make_facade,
- *        wpflint_make_listener, wpflint_make_command, wpflint_make_rule, wpflint_scaffold_plugin
+ *        wpflint_make_listener, wpflint_make_command, wpflint_make_rule,
+ *        wpflint_logging_usage, wpflint_scaffold_plugin
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -606,6 +607,53 @@ server.tool(
         },
       ],
     };
+  }
+);
+
+server.tool(
+  "wpflint_logging_usage",
+  "Show WPFlint Logger setup and usage examples for a plugin.",
+  {
+    channel: z.string().optional().default("my-plugin").describe("Log channel name (plugin slug)"),
+    min_level: z.enum(["debug","info","notice","warning","error","critical","alert","emergency"]).optional().default("debug").describe("Minimum log level to write"),
+  },
+  async ({ channel, min_level }) => {
+    const text = `## WPFlint Logger — ${channel}
+
+### constants (define before bootstrap)
+\`\`\`php
+define( 'WPFLINT_LOG_CHANNEL', '${channel}' );
+define( 'WPFLINT_LOG_LEVEL',   '${min_level}' );
+\`\`\`
+
+### register provider
+\`\`\`php
+use WPFlint\\Logging\\LoggingServiceProvider;
+$app->register( LoggingServiceProvider::class );
+\`\`\`
+
+### usage
+\`\`\`php
+use WPFlint\\Logging\\LoggerInterface;
+use WPFlint\\Logging\\LogLevel;
+
+$logger = $app->make( LoggerInterface::class );
+$logger->info( 'Plugin booted.' );
+$logger->warning( 'Slow query {ms}ms.', [ 'ms' => 850 ] );
+$logger->error( 'Payment failed', [ 'exception' => $e ] );
+
+// global helper
+wpflint_log( 'Order {id} placed.', [ 'id' => $orderId ] );
+wpflint_log( 'Auth failed', [ 'user' => $userId ], 'warning' );
+
+// dump and die (dev only)
+wpflint_dd( $someVariable, $anotherVariable );
+\`\`\`
+
+### entry format
+\`[YYYY-MM-DD HH:MM:SS] ${channel}.LEVEL: Interpolated message {context_json?}\`
+`;
+    return { content: [{ type: "text", text }] };
   }
 );
 

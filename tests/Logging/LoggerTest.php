@@ -298,7 +298,7 @@ class LoggerTest extends TestCase {
 	public function test_provider_binds_logger_singleton(): void {
 		$app = Application::get_instance();
 		$app->register( LoggingServiceProvider::class );
-		$app->boot();
+		$app->boot_providers();
 
 		$a = $app->make( 'logger' );
 		$b = $app->make( 'logger' );
@@ -310,7 +310,7 @@ class LoggerTest extends TestCase {
 	public function test_provider_binds_logger_interface(): void {
 		$app = Application::get_instance();
 		$app->register( LoggingServiceProvider::class );
-		$app->boot();
+		$app->boot_providers();
 
 		$this->assertInstanceOf( LoggerInterface::class, $app->make( LoggerInterface::class ) );
 	}
@@ -336,11 +336,10 @@ class LoggerTest extends TestCase {
 	}
 
 	public function test_log_message_canonical_writes_to_logger(): void {
-		$app = Application::get_instance();
-		$app->register( LoggingServiceProvider::class );
-		$app->boot();
-
 		$spy_logger = $this->spy_logger();
+
+		$app = Application::get_instance();
+		// Bind the spy BEFORE any resolution so the singleton closure captures it.
 		$app->singleton( 'logger', fn() => $spy_logger );
 		$app->singleton( LoggerInterface::class, fn() => $spy_logger );
 
