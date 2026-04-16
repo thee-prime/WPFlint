@@ -62,5 +62,38 @@ if (! class_exists('WP_CLI')) {
     }
 }
 
+// Stub WP_Widget for Widget tests.
+if (! class_exists('WP_Widget')) {
+    // phpcs:ignore
+    class WP_Widget {
+        public $id_base = '';
+        public $name    = '';
+
+        public function __construct( $id_base = '', $name = '', $widget_options = array(), $control_options = array() ) {
+            $this->id_base = $id_base;
+            $this->name    = $name;
+        }
+
+        public function widget( $args, $instance ) {}
+        public function form( $instance ) {}
+        public function update( $new_instance, $old_instance ) { return $new_instance; }
+        public function get_field_id( $field_name ) { return 'widget-' . $this->id_base . '-' . $field_name; }
+        public function get_field_name( $field_name ) { return 'widget-' . $this->id_base . '[][' . $field_name . ']'; }
+    }
+}
+
+// Stub WP_Post for MetaBox render callback tests.
+if (! class_exists('WP_Post')) {
+    // phpcs:ignore
+    class WP_Post {
+        public $ID        = 0;
+        public $post_type = 'post';
+        public function __construct( $id = 0, $post_type = 'post' ) {
+            $this->ID        = $id;
+            $this->post_type = $post_type;
+        }
+    }
+}
+
 // Initialize WP_Mock.
 WP_Mock::bootstrap();

@@ -2,7 +2,7 @@
 
 A Laravel-inspired framework for building WordPress plugins. Zero production dependencies. PHP 7.4+.
 
-WPFlint gives you the tools you expect from a modern PHP framework — IoC container, Eloquent-style ORM, migrations, routing, middleware, validation, events, caching, and facades — all built on top of WordPress APIs and fully compliant with WP.org plugin guidelines.
+WPFlint gives you the tools you expect from a modern PHP framework — IoC container, Eloquent-style ORM, migrations, routing, middleware, validation, events, caching, views, mail, admin builders, and Gutenberg support — all built on top of WordPress APIs and fully compliant with WP.org plugin guidelines.
 
 ---
 
@@ -11,23 +11,44 @@ WPFlint gives you the tools you expect from a modern PHP framework — IoC conta
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Architecture Overview](#architecture-overview)
-- [Application](#application)
-- [Service Container](#service-container)
-- [Service Providers](#service-providers)
-- [Configuration](#configuration)
-- [Routing](#routing)
-- [Middleware](#middleware)
-- [Controllers](#controllers)
-- [Requests & Validation](#requests--validation)
-- [Responses](#responses)
-- [Database: Migrations](#database-migrations)
-- [Database: Schema Builder](#database-schema-builder)
-- [Database: Query Builder](#database-query-builder)
-- [Database: ORM](#database-orm)
-- [Relationships](#relationships)
-- [Events](#events)
-- [Cache](#cache)
-- [Facades](#facades)
+- [Core Framework](#core-framework)
+  - [Application](#application)
+  - [Service Container](#service-container)
+  - [Service Providers](#service-providers)
+  - [Configuration](#configuration)
+  - [Facades](#facades)
+- [HTTP Layer](#http-layer)
+  - [Routing](#routing)
+  - [Middleware](#middleware)
+  - [Controllers](#controllers)
+  - [Requests & Validation](#requests--validation)
+  - [Responses](#responses)
+  - [REST API Auth Helpers](#rest-api-auth-helpers)
+- [Database](#database)
+  - [Migrations](#database-migrations)
+  - [Schema Builder](#database-schema-builder)
+  - [Query Builder](#database-query-builder)
+  - [ORM](#database-orm)
+  - [Relationships](#relationships)
+- [WordPress UI](#wordpress-ui)
+  - [Admin Menu & Pages](#admin-menu--pages)
+  - [Settings API](#settings-api)
+  - [Admin Notices](#admin-notices)
+  - [Metabox Builder](#metabox-builder)
+  - [Shortcodes](#shortcodes)
+  - [Block Registration](#block-registration)
+  - [Widgets](#widgets)
+- [Templates & Mail](#templates--mail)
+  - [Views](#views)
+  - [Mail](#mail)
+- [Plugin Infrastructure](#plugin-infrastructure)
+  - [Plugin Lifecycle](#plugin-lifecycle)
+  - [Asset Manager](#asset-manager)
+  - [Events](#events)
+  - [Cache](#cache)
+  - [Logging](#logging)
+  - [Queue & Jobs](#queue--jobs)
+  - [Scheduler](#scheduler)
 - [WP-CLI Commands](#wp-cli-commands)
 - [Testing](#testing)
 - [WP.org Compliance](#wporg-compliance)
@@ -61,149 +82,82 @@ if ( ! defined( 'ABSPATH' ) ) {
 require_once __DIR__ . '/vendor/autoload.php';
 
 use WPFlint\Application;
+use WPFlint\Lifecycle\Lifecycle;
+
+// Wire up activation / deactivation / uninstall BEFORE autoload runs.
+Lifecycle::for( __FILE__ )
+    ->on_activate( function () { \MyShop\Installer::activate(); } )
+    ->on_deactivate( function () { \MyShop\Installer::deactivate(); } )
+    ->on_uninstall( \MyShop\Installer::class )
+    ->register();
 
 $app = Application::get_instance( __DIR__ );
 $app->register( MyShop\Providers\ShopServiceProvider::class );
 $app->bootstrap();
 ```
 
-That's it. WPFlint hooks into the WordPress lifecycle automatically. Your service provider handles the rest.
-
 ---
 
 ## Architecture Overview
 
-WPFlint follows the service container pattern. The `Application` class extends the IoC container, manages service providers, and hooks into WordPress at the right lifecycle points.
-
 ```
 Application (extends Container)
     |
-    +-- ServiceProviders register bindings
-    |       +-- register()   runs on plugins_loaded
-    |       +-- boot()       runs on init
+    +-- ServiceProviders register bindings (register())
+    |       +-- boot() runs on init
     |
-    +-- Router dispatches AJAX & REST requests
-    +-- Migrator manages database schema
-    +-- Dispatcher fires typed events
-    +-- CacheManager handles multi-driver caching
+    +-- Router        AJAX + REST routing + middleware pipeline
+    +-- Migrator      database schema version control
+    +-- Dispatcher    typed event system
+    +-- CacheManager  multi-driver caching with tag invalidation
+    +-- AssetManager  script/style enqueueing with conditional loading
 ```
+
+Service providers are the central place to configure your plugin. Register everything — routes, event listeners, admin pages, metaboxes, widgets, assets — in `boot()`.
 
 ---
 
-## Application
+## Core Framework
 
-The `Application` singleton bootstraps the framework and manages the plugin lifecycle.
+### Application
 
 ```php
 use WPFlint\Application;
 
-// Get or create the singleton instance.
-$app = Application::get_instance( __DIR__ );
+$app = Application::get_instance( __DIR__ );  // get or create singleton
+$app->register( MyServiceProvider::class );    // register a provider
+$app->bootstrap();                              // hook into WP lifecycle
 
-// Register service providers.
-$app->register( MyServiceProvider::class );
-
-// Bootstrap — hooks into WordPress lifecycle.
-$app->bootstrap();
+$app->base_path();                 // plugin root directory
+$app->base_path( 'config/db.php' ); // append a path
+$app->is_booted();                 // bool
 ```
 
-### Lifecycle Hooks
+[Full documentation →](docs/application.md)
 
-When you call `bootstrap()`, WPFlint registers three WordPress actions:
-
-| Hook | Priority | What happens |
-|------|----------|-------------|
-| `plugins_loaded` | 1 | All providers available for registration |
-| `init` | 5 | `boot()` called on all non-deferred providers |
-| `wp_loaded` | 10 | Deferred providers registered and booted |
-
-### API
-
-```php
-$app = Application::get_instance( $base_path );
-Application::clear_instance();                    // reset (for testing)
-
-$app->register( ProviderClass::class );           // register a provider
-$app->boot_providers();                           // boot all providers
-$app->base_path();                                // plugin root directory
-$app->base_path( 'config/app.php' );             // append a path
-$app->is_booted();                                // bool
-$app->get_providers();                            // registered providers
-$app->get_deferred_providers();                   // deferred provider map
-```
-
----
-
-## Service Container
+### Service Container
 
 PSR-11 compliant IoC container with auto-resolution, singletons, and contextual bindings.
 
-### Binding
-
 ```php
-// Simple binding — new instance each time.
+// Binding
 $app->bind( LoggerInterface::class, FileLogger::class );
+$app->singleton( CacheManager::class, fn( $app ) => new CacheManager( $app ) );
+$app->instance( 'config', $config );
 
-// Singleton — same instance every time.
-$app->singleton( CacheManager::class, function ( $app ) {
-    return new CacheManager( $app );
-} );
+// Resolution
+$service = $app->make( OrderService::class ); // auto-resolves constructor deps
+$service = $app->get( OrderService::class );   // PSR-11 alias
 
-// Register an existing instance.
-$app->instance( 'config', $configObject );
-```
-
-### Resolving
-
-```php
-$logger = $app->make( LoggerInterface::class );
-
-// PSR-11 aliases.
-$logger = $app->get( LoggerInterface::class );
-$app->has( LoggerInterface::class ); // true
-```
-
-### Auto-Resolution
-
-Constructor dependencies are resolved automatically via reflection:
-
-```php
-class OrderService {
-    public function __construct( LoggerInterface $logger, CacheManager $cache ) {}
-}
-
-// Both $logger and $cache resolved from the container.
-$service = $app->make( OrderService::class );
-```
-
-### Contextual Bindings
-
-Give different implementations to different consumers:
-
-```php
+// Contextual bindings
 $app->when( OrderService::class )
     ->needs( LoggerInterface::class )
     ->give( OrderLogger::class );
-
-$app->when( PaymentService::class )
-    ->needs( LoggerInterface::class )
-    ->give( PaymentLogger::class );
 ```
 
-### Error Handling
+[Full documentation →](docs/container.md)
 
-| Exception | When |
-|-----------|------|
-| `NotFoundException` | Class does not exist |
-| `ContainerException` | Class not instantiable, circular dependency, or unresolvable primitive |
-
----
-
-## Service Providers
-
-Service providers are the central place to configure your plugin. Each provider has two lifecycle methods: `register()` for binding into the container, and `boot()` for hooking into WordPress.
-
-### Creating a Provider
+### Service Providers
 
 ```php
 use WPFlint\Providers\ServiceProvider;
@@ -211,982 +165,704 @@ use WPFlint\Providers\ServiceProvider;
 class ShopServiceProvider extends ServiceProvider {
 
     public function register(): void {
-        $this->app->singleton( OrderService::class, function ( $app ) {
-            return new OrderService( $app->make( CacheManager::class ) );
-        } );
+        $this->app->singleton( OrderService::class, fn( $app ) => new OrderService( $app ) );
     }
 
     public function boot(): void {
-        // Register routes, event listeners, etc.
+        // Register routes, hooks, assets, etc.
     }
 }
 ```
 
-### Deferred Providers
-
-Deferred providers are only registered when one of their provided bindings is actually needed:
+Deferred providers are only booted when one of their bindings is requested:
 
 ```php
 class PaymentServiceProvider extends ServiceProvider {
-
     public bool $defer = true;
-
-    public function register(): void {
-        $this->app->singleton( PaymentGateway::class, StripeGateway::class );
-    }
-
-    public function provides(): array {
-        return array( PaymentGateway::class );
-    }
+    public function register(): void { ... }
+    public function provides(): array { return array( PaymentGateway::class ); }
 }
 ```
 
----
+[Full documentation →](docs/providers.md)
 
-## Configuration
-
-Dot-notation configuration with file-based loading.
-
-### Configuration Files
-
-Place PHP files in `config/` that return arrays. The filename becomes the top-level key:
-
-```php
-// config/app.php
-return array(
-    'name'    => 'My Shop',
-    'version' => '1.0.0',
-    'debug'   => false,
-);
-```
-
-### Accessing Configuration
+### Configuration
 
 ```php
 use WPFlint\Facades\Config;
 
-Config::get( 'app.name' );                  // 'My Shop'
-Config::get( 'app.missing', 'default' );    // 'default'
+// config/app.php returns an array — filename is the top-level key.
+Config::get( 'app.name' );
+Config::get( 'app.missing', 'default' );
 Config::set( 'app.debug', true );
-Config::has( 'app.name' );                  // true
-Config::all();                               // entire config array
-Config::push( 'app.middleware', 'throttle' ); // append to array
+Config::has( 'app.name' );
+Config::push( 'app.middleware', 'throttle' );
 ```
 
-### Environment Helpers
+[Full documentation →](docs/config.md)
+
+### Facades
 
 ```php
-use WPFlint\Config\Repository;
+use WPFlint\Facades\Cache;
+use WPFlint\Facades\Event;
+use WPFlint\Facades\Config;
 
-// Checks PHP constants first, then $_ENV, then returns default.
-$debug = Repository::env( 'WP_DEBUG', false );
+Cache::remember( 'key', 3600, fn() => Order::all() );
+Event::fire( new OrderPlaced( $order ) );
+Config::get( 'app.name' );
 ```
+
+Create custom facades:
+
+```php
+class Orders extends Facade {
+    protected static function get_facade_accessor(): string { return 'orders'; }
+}
+```
+
+[Full documentation →](docs/facades.md)
 
 ---
 
-## Routing
+## HTTP Layer
 
-WPFlint provides routing for both WordPress AJAX and REST API endpoints.
-
-### AJAX Routes
+### Routing
 
 ```php
 use WPFlint\Http\Router;
 
 $router = $app->make( Router::class );
 
-// Logged-in users only (default).
+// AJAX routes
 $router->ajax( 'my-shop/save-order', array( OrderController::class, 'store' ) )
     ->middleware( array( 'nonce:save_order', 'can:edit_posts' ) );
 
-// Public route (logged-in + guests).
-$router->ajax( 'my-shop/get-products', array( ProductController::class, 'index' ) )
+$router->ajax( 'my-shop/products', array( ProductController::class, 'index' ) )
     ->nopriv()
     ->middleware( array( 'throttle:60,1' ) );
-```
 
-### REST API Routes
-
-```php
-use WPFlint\Http\RestRouter;
-
+// REST API routes
 $router->rest( 'my-shop/v1', function ( RestRouter $r ) {
-    $r->get( '/orders', array( OrderRestController::class, 'index' ) );
-    $r->post( '/orders', array( OrderRestController::class, 'store' ) );
-    $r->get( '/orders/(?P<id>\d+)', array( OrderRestController::class, 'show' ) );
-    $r->put( '/orders/(?P<id>\d+)', array( OrderRestController::class, 'update' ) );
+    $r->get( '/orders',               array( OrderRestController::class, 'index' ) );
+    $r->post( '/orders',              array( OrderRestController::class, 'store' ) );
+    $r->get( '/orders/(?P<id>\d+)',   array( OrderRestController::class, 'show' ) );
+    $r->put( '/orders/(?P<id>\d+)',   array( OrderRestController::class, 'update' ) );
     $r->delete( '/orders/(?P<id>\d+)', array( OrderRestController::class, 'destroy' ) );
 } );
 ```
 
-### Registering Routes
+[Full documentation →](docs/http.md)
 
-Register routes in your service provider's `boot()` method, then register the `HttpServiceProvider`:
+### Middleware
 
-```php
-$app->register( \WPFlint\Http\HttpServiceProvider::class );
-```
+Built-in middleware: `nonce:{action}`, `can:{capability}`, `throttle:{max},{minutes}`.
 
----
-
-## Middleware
-
-Middleware filters HTTP requests before they reach your controller. WPFlint includes three built-in middleware and supports custom middleware.
-
-### Built-in Middleware
-
-**Nonce Verification** — `nonce:{action}`
+Custom middleware:
 
 ```php
-->middleware( array( 'nonce:save_order' ) )
-// Uses check_ajax_referer() to verify the WordPress nonce.
-```
-
-**Capability Check** — `can:{capability}`
-
-```php
-->middleware( array( 'can:edit_posts' ) )
-// Uses current_user_can() to verify permissions.
-```
-
-**Rate Limiting** — `throttle:{max},{minutes}`
-
-```php
-->middleware( array( 'throttle:60,1' ) )
-// 60 requests per minute, tracked via WordPress transients.
-```
-
-### Custom Middleware
-
-Implement `MiddlewareInterface`:
-
-```php
-use WPFlint\Http\Middleware\MiddlewareInterface;
-use WPFlint\Http\Request;
-use WPFlint\Http\Response;
-use Closure;
-
 class EnsureStoreIsOpen implements MiddlewareInterface {
-
     public function handle( Request $request, Closure $next ) {
         if ( ! get_option( 'store_open' ) ) {
-            return Response::error(
-                __( 'Store is closed.', 'my-shop' ),
-                403
-            );
+            return Response::error( 'Store is closed.', 403 );
         }
         return $next( $request );
     }
 }
 ```
 
-Register an alias for cleaner route definitions:
+[Full documentation →](docs/http.md)
+
+### Controllers
 
 ```php
-$router->alias_middleware( 'store.open', EnsureStoreIsOpen::class );
-
-// Then use it:
-$router->ajax( 'my-shop/checkout', array( CheckoutController::class, 'store' ) )
-    ->middleware( array( 'store.open', 'nonce:checkout', 'can:edit_posts' ) );
-```
-
-### Pipeline
-
-The Pipeline sends a request through a middleware stack:
-
-```php
-use WPFlint\Http\Pipeline;
-
-$result = ( new Pipeline() )
-    ->send( $request )
-    ->through( array( $middleware1, $middleware2 ) )
-    ->then( function ( Request $request ) {
-        return Response::json( array( 'ok' => true ) );
-    } );
-```
-
----
-
-## Controllers
-
-### AJAX Controllers
-
-Extend `Controller`. Constructor dependencies are auto-resolved from the container. If a method type-hints a `Request` subclass, it is validated and authorized automatically before the method runs.
-
-```php
-use WPFlint\Http\Controller;
-use WPFlint\Http\Response;
-
 class OrderController extends Controller {
-
-    private OrderService $orders;
-
-    public function __construct( OrderService $orders ) {
-        $this->orders = $orders;
-    }
+    public function __construct( private OrderService $orders ) {}
 
     public function store( StoreOrderRequest $request ): Response {
-        // $request is already validated and sanitized.
+        // $request already validated + sanitized
         $order = $this->orders->create( $request->validated() );
         return Response::json( $order->to_array(), 201 );
     }
-
-    public function index( Request $request ): Response {
-        return Response::json( $this->orders->all() );
-    }
 }
-```
-
-### REST Controllers
-
-Extend `RestController` for WordPress REST API endpoints:
-
-```php
-use WPFlint\Http\RestController;
 
 class OrderRestController extends RestController {
-
     protected string $namespace = 'my-shop/v1';
     protected string $rest_base = 'orders';
 
-    public function index( \WP_REST_Request $request ): \WP_REST_Response {
-        $orders = Order::all();
-        return $this->respond( $orders );
-    }
-
-    public function show( \WP_REST_Request $request ): \WP_REST_Response {
-        $order = Order::find( (int) $request->get_param( 'id' ) );
-        if ( ! $order ) {
-            return $this->error( __( 'Not found.', 'my-shop' ), 404 );
-        }
-        return $this->respond( $order->to_array() );
-    }
-
-    public function get_items_permissions_check( $request ): bool {
-        return current_user_can( 'read' );
+    public function index( \WP_REST_Request $req ): \WP_REST_Response {
+        return $this->respond( Order::all() );
     }
 }
 ```
 
----
+[Full documentation →](docs/http.md)
 
-## Requests & Validation
-
-### Base Request
-
-```php
-use WPFlint\Http\Request;
-
-$request = new Request( $data );
-
-$request->input( 'name' );               // single value
-$request->input( 'user.name' );          // dot notation
-$request->input( 'missing', 'default' ); // with default
-$request->all();                          // all input
-$request->only( array( 'name' ) );       // subset
-$request->except( array( 'secret' ) );   // exclude keys
-$request->has( 'name' );                 // bool
-$request->file( 'avatar' );             // uploaded file or null
-```
-
-### Form Requests
-
-Subclass `Request` to add validation, authorization, and sanitization:
+### Requests & Validation
 
 ```php
 class StoreOrderRequest extends Request {
-
-    public function authorize(): bool {
-        return current_user_can( 'edit_posts' );
-    }
-
+    public function authorize(): bool { return current_user_can( 'edit_posts' ); }
     public function rules(): array {
         return array(
-            'status'             => 'required|in:pending,paid,cancelled',
-            'total'              => 'required|numeric|min:0',
-            'items'              => 'required|array|min:1',
-            'items.*.product_id' => 'required|integer',
-            'items.*.qty'        => 'required|integer|min:1',
-            'note'               => 'nullable|string|max:500',
+            'status' => 'required|in:pending,paid,cancelled',
+            'total'  => 'required|numeric|min:0',
+            'items'  => 'required|array|min:1',
         );
     }
-
     public function sanitize(): array {
-        return array(
-            'status' => 'sanitize_text_field',
-            'total'  => 'floatval',
-        );
+        return array( 'status' => 'sanitize_text_field', 'total' => 'floatval' );
     }
 }
 ```
 
-### Validation Rules
+[Full documentation →](docs/validation.md)
 
-| Rule | Description |
-|------|-------------|
-| `required` | Must be present and non-empty |
-| `nullable` | Allows null; skips remaining rules if null |
-| `string` | Must be a string |
-| `integer` | Must be an integer |
-| `numeric` | Must be numeric |
-| `email` | Must pass `is_email()` |
-| `url` | Must pass `filter_var( FILTER_VALIDATE_URL )` |
-| `boolean` | Must be true/false/0/1 |
-| `array` | Must be an array |
-| `in:a,b,c` | Must be one of the listed values |
-| `min:N` | Minimum value (numeric), length (string), or count (array) |
-| `max:N` | Maximum value (numeric), length (string), or count (array) |
-
-Rules are pipe-separated: `'required|string|min:3|max:100'`
-
-Use `*` for array item validation: `'items.*.product_id' => 'required|integer'`
-
-### Using Validated Data
+### Responses
 
 ```php
-$request = new StoreOrderRequest( $data );
-
-if ( $request->validate() ) {
-    $clean = $request->validated(); // sanitized, validated data
-} else {
-    $errors = $request->errors();   // array of field => message
-}
-```
-
----
-
-## Responses
-
-```php
-use WPFlint\Http\Response;
-
-// Success
-Response::json( array( 'order' => $order ), 200 );
-Response::json( array( 'id' => 1 ), 201 );
-Response::no_content(); // 204
-
-// Error
-Response::error( __( 'Not found.', 'my-shop' ), 404 );
-Response::error( __( 'Bad request.', 'my-shop' ) ); // defaults to 400
-
-// Headers
+Response::json( array( 'order' => $order ), 201 );
+Response::error( 'Not found.', 404 );
+Response::no_content();
 $response->with_header( 'X-Custom', 'value' );
-
-// Status checks
-$response->is_successful(); // 2xx
-$response->is_error();      // 4xx or 5xx
-
-// Send
-$response->send_ajax();          // calls wp_send_json_success/error
-$rest = $response->to_rest();    // convert to WP_REST_Response
+$response->send_ajax();
+$response->to_rest();
 ```
+
+[Full documentation →](docs/http.md)
+
+### REST API Auth Helpers
+
+Factory methods that return `permission_callback` callables:
+
+```php
+use WPFlint\Http\RestAuth;
+
+// In register_rest_route():
+'permission_callback' => RestAuth::capability( 'manage_options' )
+'permission_callback' => RestAuth::logged_in()
+'permission_callback' => RestAuth::public_access()
+'permission_callback' => RestAuth::all_of( 'edit_posts', 'upload_files' )
+'permission_callback' => RestAuth::any_of( 'edit_posts', 'edit_pages' )
+
+// Versioned namespace builder:
+RestAuth::namespace( 'my-plugin', 1 )   // 'my-plugin/v1'
+RestAuth::namespace( 'my-plugin', 2 )   // 'my-plugin/v2'
+
+// Direct boolean checks:
+RestAuth::require_logged_in()
+RestAuth::require_capability( 'manage_options' )
+```
+
+[Full documentation →](docs/rest-auth.md)
 
 ---
 
-## Database: Migrations
+## Database
 
-Laravel-inspired migration system with version control, rollback support, and multi-plugin scoping.
-
-### Creating a Migration
+### Database: Migrations
 
 ```php
-use WPFlint\Database\Migrations\Migration;
-use WPFlint\Database\Schema\Blueprint;
-
 class CreateOrdersTable extends Migration {
-
     public function up(): void {
-        $this->schema()->create( 'orders', function ( Blueprint $table ) {
-            $table->big_increments( 'id' );
-            $table->string( 'status' )->default( 'pending' );
-            $table->decimal( 'total', 10, 2 );
-            $table->text( 'notes' )->nullable();
-            $table->timestamps();
+        $this->schema()->create( 'orders', function ( Blueprint $t ) {
+            $t->big_increments( 'id' );
+            $t->string( 'status' )->default( 'pending' );
+            $t->decimal( 'total', 10, 2 );
+            $t->timestamps();
         } );
     }
-
-    public function down(): void {
-        $this->schema()->drop( 'orders' );
-    }
+    public function down(): void { $this->schema()->drop( 'orders' ); }
 }
-```
 
-### Running Migrations
-
-```php
-use WPFlint\Database\Migrations\Migrator;
-use WPFlint\Database\Migrations\MigrationRepository;
-
-$repository = new MigrationRepository( 'my-shop' );
-$migrator   = new Migrator( $repository, array(
-    CreateUsersTable::class,
+$migrator = new Migrator( new MigrationRepository( 'my-shop' ), array(
     CreateOrdersTable::class,
 ) );
-
-$ran         = $migrator->run();           // run pending
-$rolled_back = $migrator->rollback();      // rollback last batch
-$rolled_back = $migrator->rollback( 2 );   // rollback 2 batches
-$status      = $migrator->get_status();    // migration status
-$pending     = $migrator->get_pending();   // unrun migrations
+$migrator->run();
 ```
 
-### Migration Repository
+[Full documentation →](docs/migrations.md)
 
-Tracks run migrations in `{prefix}wpflint_migrations`, scoped by plugin slug so multiple plugins don't collide.
-
----
-
-## Database: Schema Builder
-
-Fluent API for creating and modifying database tables.
-
-### Column Types
+### Database: Schema Builder
 
 ```php
-$table->big_increments( 'id' );        // BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
-$table->string( 'name' );              // VARCHAR(255)
-$table->string( 'code', 50 );          // VARCHAR(50)
-$table->integer( 'quantity' );         // INT
-$table->decimal( 'price', 10, 2 );     // DECIMAL(10,2)
-$table->boolean( 'active' );           // TINYINT(1)
-$table->text( 'description' );         // TEXT
-$table->timestamps();                   // created_at + updated_at DATETIME
-$table->soft_deletes();                 // deleted_at DATETIME NULL
+$table->big_increments( 'id' );
+$table->string( 'email' );
+$table->decimal( 'total', 10, 2 );
+$table->boolean( 'active' );
+$table->timestamps();
+$table->soft_deletes();
+$table->index( 'email' );
+$table->unique( 'slug' );
+$table->foreign( 'user_id' )->references( 'id' )->on( 'users' )->on_delete( 'CASCADE' );
 ```
 
-### Column Modifiers
+[Full documentation →](docs/schema.md)
+
+### Database: Query Builder
 
 ```php
-$table->string( 'status' )->default( 'pending' );
-$table->text( 'notes' )->nullable();
+QueryBuilder::table( 'orders' )
+    ->where( 'status', 'pending' )
+    ->where( 'total', '>', 100 )
+    ->order_by( 'created_at', 'DESC' )
+    ->limit( 10 )
+    ->get();
 ```
 
-### Indexes
+[Full documentation →](docs/orm.md)
+
+### Database: ORM
 
 ```php
-$table->index( 'email' );                           // single column
-$table->index( array( 'status', 'created_at' ) );  // composite
-$table->unique( 'email' );                           // unique constraint
-```
-
-### Foreign Keys
-
-```php
-$table->foreign( 'user_id' )
-    ->references( 'id' )
-    ->on( 'users' )
-    ->on_delete( 'CASCADE' )
-    ->on_update( 'CASCADE' );
-```
-
-### Table Operations
-
-```php
-$schema->create( 'orders', function ( Blueprint $table ) { ... } );
-$schema->drop( 'orders' );
-$schema->has_table( 'orders' );        // bool
-$schema->add_column( 'orders', function ( Blueprint $table ) {
-    $table->string( 'tracking_number' )->nullable();
-} );
-```
-
----
-
-## Database: Query Builder
-
-Fluent SQL builder that compiles and executes queries via `$wpdb->prepare()`.
-
-```php
-use WPFlint\Database\ORM\QueryBuilder;
-
-$query = QueryBuilder::table( 'orders' );
-```
-
-### WHERE Clauses
-
-```php
-$query->where( 'status', 'pending' );              // = implied
-$query->where( 'total', '>', 100 );                // explicit operator
-$query->or_where( 'status', 'paid' );
-$query->where_in( 'id', array( 1, 2, 3 ) );
-$query->where_not_in( 'id', array( 4, 5 ) );
-$query->where_null( 'deleted_at' );
-$query->where_not_null( 'paid_at' );
-$query->where_between( 'total', 10, 100 );
-$query->where_like( 'name', '%john%' );
-$query->where_raw( 'total > %d', array( 50 ) );
-```
-
-### Ordering, Grouping, Limits
-
-```php
-$query->order_by( 'created_at', 'DESC' );
-$query->latest();                    // created_at DESC
-$query->oldest();                    // created_at ASC
-$query->group_by( 'status' );
-$query->having( 'COUNT(*)', '>', 5 );
-$query->limit( 10 )->offset( 20 );
-```
-
-### Joins
-
-```php
-$query->join( 'users', 'orders.user_id', '=', 'users.id' );
-$query->left_join( 'profiles', 'users.id', '=', 'profiles.user_id' );
-$query->right_join( 'logs', 'orders.id', '=', 'logs.order_id' );
-```
-
-### Retrieval
-
-```php
-$rows   = $query->get();                // array of associative arrays
-$row    = $query->first();              // single row or null
-$row    = $query->find( 42 );           // find by primary key
-$value  = $query->value( 'status' );    // single column value
-$ids    = $query->pluck( 'id' );        // array of values
-$map    = $query->pluck( 'name', 'id' ); // keyed array
-$exists = $query->exists();
-```
-
-### Aggregates
-
-```php
-$query->count();
-$query->max( 'total' );
-$query->min( 'total' );
-$query->avg( 'total' );
-$query->sum( 'total' );
-```
-
-### Pagination & Chunking
-
-```php
-$page = $query->paginate( 15, 1 );
-// Returns: ['data' => [...], 'total' => 100, 'per_page' => 15,
-//           'current_page' => 1, 'last_page' => 7]
-
-$query->chunk( 100, function ( array $rows ) {
-    // Process batch. Return false to stop.
-} );
-```
-
-### Write Operations
-
-```php
-$id = $query->insert( array( 'status' => 'pending', 'total' => 99.50 ) );
-$query->insert_many( array( $row1, $row2 ) );
-
-$query->where( 'id', 1 )->update( array( 'status' => 'paid' ) );
-$query->where( 'id', 1 )->increment( 'views' );
-$query->where( 'id', 1 )->decrement( 'stock', 3 );
-$query->where( 'id', 1 )->delete();
-```
-
----
-
-## Database: ORM
-
-Laravel-inspired Active Record ORM. Every query uses `$wpdb->prepare()`.
-
-### Defining Models
-
-```php
-use WPFlint\Database\ORM\Model;
-use WPFlint\Database\ORM\ModelQueryBuilder;
-
 class Order extends Model {
-
-    protected static string $table = 'orders';         // optional, auto-inferred
-    protected static string $primary_key = 'id';        // default
-    protected static bool $timestamps = true;            // default
-
-    protected array $fillable = array( 'status', 'total', 'meta' );
-    protected array $hidden = array( 'internal_notes' );
-    protected array $casts = array(
-        'total'  => 'float',
-        'meta'   => 'array',
-        'active' => 'boolean',
-    );
+    protected static string $table = 'orders';
+    protected array $fillable = array( 'status', 'total' );
+    protected array $casts    = array( 'total' => 'float', 'meta' => 'array' );
 
     public function scope_pending( ModelQueryBuilder $q ): ModelQueryBuilder {
         return $q->where( 'status', 'pending' );
     }
-
-    public function scope_expensive( ModelQueryBuilder $q, float $min ): ModelQueryBuilder {
-        return $q->where( 'total', '>=', $min );
-    }
 }
+
+$order  = Order::find( 1 );
+$orders = Order::pending()->where( 'total', '>', 50 )->get_models();
+$order  = Order::create( array( 'status' => 'pending', 'total' => 99.50 ) );
+$order  = Order::cached( 42 );          // cached find (TTL 3600s)
 ```
 
-### Table Name Inference
+[Full documentation →](docs/orm.md)
 
-If `$table` is not set, it's inferred from the class name:
-
-- `Order` becomes `orders`
-- `UserProfile` becomes `user_profiles`
-- `Category` becomes `categories`
-
-### Querying
-
-```php
-// Find
-$order = Order::find( 1 );                    // Model or null
-$order = Order::find_or_fail( 1 );            // Model or throws
-
-// All
-$orders = Order::all();                        // array of Models
-
-// Where
-$orders = Order::where( 'status', 'pending' )->get_models();
-$orders = Order::where( 'total', '>', 100 )->get_models();
-$orders = Order::where_in( 'id', array( 1, 2, 3 ) )->get_models();
-
-// Scopes
-$orders = Order::pending()->get_models();
-$orders = Order::expensive( 500 )->get_models();
-
-// Raw query builder
-$builder = Order::query();
-```
-
-### Creating & Updating
-
-```php
-// Create
-$order = Order::create( array( 'status' => 'pending', 'total' => 99.50 ) );
-
-// Find or create
-$order = Order::first_or_create(
-    array( 'status' => 'pending' ),  // search
-    array( 'total' => 0 )             // defaults if created
-);
-
-// Update or create
-$order = Order::update_or_create(
-    array( 'email' => 'john@example.com' ),
-    array( 'name' => 'John' )
-);
-
-// Instance update
-$order->status = 'paid';
-$order->save();
-
-// Mass delete
-Order::destroy( 1 );
-```
-
-### Dirty Tracking
-
-```php
-$order->set_attribute( 'status', 'paid' );
-$order->is_dirty();          // true
-$order->is_dirty( 'status' ); // true
-$order->get_dirty();          // ['status' => 'paid']
-```
-
-### Serialization
-
-```php
-$order->to_array();  // excludes $hidden, applies casts
-$order->to_json();
-```
-
-### Casting
-
-| Cast Type | PHP Type |
-|-----------|----------|
-| `int` / `integer` | `int` |
-| `float` / `double` | `float` |
-| `string` | `string` |
-| `bool` / `boolean` | `bool` |
-| `array` / `json` | `array` (auto json_encode on save) |
-| `datetime` | `string` |
-
-### Cache Integration
-
-```php
-$order = Order::cached( 42 );         // cached find (TTL 3600s)
-$order = Order::cached( 42, 600 );    // custom TTL
-$order = Order::fresh_find( 42 );     // bypass cache, fetch from DB
-```
-
----
-
-## Relationships
-
-### Defining Relationships
+### Relationships
 
 ```php
 class User extends Model {
-    protected static string $table = 'users';
-
-    public function profile(): HasOne {
-        return $this->has_one( Profile::class );
-    }
-
-    public function orders(): HasMany {
-        return $this->has_many( Order::class );
-    }
+    public function orders(): HasMany { return $this->has_many( Order::class ); }
+    public function profile(): HasOne { return $this->has_one( Profile::class ); }
 }
-
 class Order extends Model {
-    protected static string $table = 'orders';
-
-    public function user(): BelongsTo {
-        return $this->belongs_to( User::class );
-    }
+    public function user(): BelongsTo { return $this->belongs_to( User::class ); }
 }
+
+$orders = $user->orders()->get_results();
+
+// Eager loading (prevents N+1):
+$users = User::where( 'active', 1 )->with( array( 'orders', 'profile' ) )->get_models();
 ```
 
-Foreign keys are auto-inferred:
-- `has_one` / `has_many`: foreign key = `{parent_snake}_id`
-- `belongs_to`: foreign key = `{related_snake}_id`
-
-Or specify explicitly:
-
-```php
-$this->has_many( Order::class, 'customer_id', 'id' );
-```
-
-### Lazy Loading
-
-```php
-$user    = User::find( 1 );
-$profile = $user->profile()->get_results();  // single Model or null
-$orders  = $user->orders()->get_results();   // array of Models
-$user    = $order->user()->get_results();    // single Model
-```
-
-### Eager Loading
-
-Prevents N+1 queries using `WHERE IN` batching:
-
-```php
-$users = User::where( 'active', 1 )
-    ->with( array( 'orders', 'profile' ) )
-    ->get_models();
-
-foreach ( $users as $user ) {
-    $user->orders;   // already loaded
-    $user->profile;  // already loaded
-}
-```
-
-Loaded relations are included in `to_array()` and `to_json()`.
+[Full documentation →](docs/orm.md)
 
 ---
 
-## Events
+## WordPress UI
 
-Typed event system with closure and class-based listeners, plus WordPress hook bridging.
-
-### Defining Events
+### Admin Menu & Pages
 
 ```php
-use WPFlint\Events\Event;
+use WPFlint\Admin\AdminPage;
 
-class OrderPlaced extends Event {
-    public int $order_id;
-    public float $total;
-
-    public function __construct( int $order_id, float $total ) {
-        $this->order_id = $order_id;
-        $this->total    = $total;
-    }
-}
+add_action( 'admin_menu', function () {
+    AdminPage::make( 'My Plugin', 'my-plugin' )
+        ->capability( 'manage_options' )
+        ->icon( 'dashicons-admin-tools' )
+        ->position( 80 )
+        ->render( function () {
+            View::make( 'admin.dashboard' )->output();
+        } )
+        ->submenu( 'Settings', 'my-plugin-settings', function () {
+            View::make( 'admin.settings' )->output();
+        } )
+        ->submenu( 'Tools', 'my-plugin-tools', function () {
+            View::make( 'admin.tools' )->output();
+        } )
+        ->register();
+} );
 ```
 
-### Registering Listeners
+[Full documentation →](docs/admin-menu.md)
+
+### Settings API
+
+```php
+use WPFlint\Settings\Settings;
+
+add_action( 'admin_init', function () {
+    Settings::make( 'my_plugin_options', 'my_plugin_settings' )
+        ->page( 'my-plugin-settings' )
+        ->section( 'general', 'General', function ( $s ) {
+            $s->field( 'api_key', 'API Key' )->type( 'text' )->required();
+            $s->field( 'debug',   'Debug'   )->type( 'checkbox' );
+            $s->field( 'mode',    'Mode'    )->type( 'select' )
+                ->options( array( 'live' => 'Live', 'test' => 'Test' ) );
+        } )
+        ->register();
+} );
+
+// Read saved values:
+$opts    = get_option( 'my_plugin_settings', array() );
+$api_key = $opts['api_key'] ?? '';
+```
+
+[Full documentation →](docs/settings.md)
+
+### Admin Notices
+
+```php
+use WPFlint\Admin\Notice;
+
+// Flash — shown once after redirect:
+Notice::success( 'Settings saved.' )->dismissible()->flash();
+Notice::error( 'Something went wrong.' )->flash();
+
+// Persistent — shown until dismissed:
+Notice::warning( 'API key missing.' )->persistent( 'my_plugin_api_key' );
+Notice::dismiss( 'my_plugin_api_key' );
+
+// Inline — inside your own admin_notices callback:
+add_action( 'admin_notices', function () {
+    echo Notice::info( 'Plugin activated!' )->render();
+} );
+```
+
+[Full documentation →](docs/notices.md)
+
+### Metabox Builder
+
+```php
+use WPFlint\Admin\MetaBox;
+
+add_action( 'add_meta_boxes', function () {
+    $box = MetaBox::make( 'book_details', 'Book Details' )
+        ->screen( 'book' )
+        ->context( 'normal' )
+        ->priority( 'high' );
+
+    $box->field( '_isbn',    'ISBN' )->type( 'text' )->description( 'e.g. 978-3-16-148410-0' );
+    $box->field( '_pages',   'Pages' )->type( 'number' );
+    $box->field( '_summary', 'Summary' )->type( 'textarea' );
+    $box->field( '_genre',   'Genre' )->type( 'select' )
+        ->options( array( 'fiction' => 'Fiction', 'non-fiction' => 'Non-Fiction' ) );
+    $box->field( '_featured', 'Featured' )->type( 'checkbox' );
+
+    $box->register();
+} );
+
+// Read saved values anywhere:
+$isbn  = get_post_meta( $post->ID, '_isbn', true );
+$pages = (int) get_post_meta( $post->ID, '_pages', true );
+```
+
+[Full documentation →](docs/metabox.md)
+
+### Shortcodes
+
+```php
+use WPFlint\Shortcodes\Shortcode;
+
+Shortcode::make( 'my_cta' )
+    ->defaults( array( 'text' => 'Get Started', 'url' => '#', 'style' => 'primary' ) )
+    ->render( function ( array $atts, string $content ): string {
+        return sprintf(
+            '<a href="%s" class="btn btn-%s">%s</a>',
+            esc_url( $atts['url'] ),
+            esc_attr( $atts['style'] ),
+            esc_html( $atts['text'] )
+        );
+    } )
+    ->register();
+
+// With a View template:
+Shortcode::make( 'pricing_table' )
+    ->defaults( array( 'plan' => 'basic' ) )
+    ->render( fn( $atts ) => View::make( 'shortcodes.pricing' )->with( $atts )->render() )
+    ->register();
+```
+
+[Full documentation →](docs/shortcodes.md)
+
+### Block Registration
+
+```php
+use WPFlint\Blocks\Block;
+
+add_action( 'init', function () {
+    Block::make( 'my-plugin/hero' )
+        ->title( 'Hero Section' )
+        ->category( 'design' )
+        ->editor_script( 'my-plugin-blocks' )
+        ->attributes( array(
+            'heading' => array( 'type' => 'string', 'default' => 'Welcome' ),
+            'align'   => array( 'type' => 'string', 'default' => 'center' ),
+        ) )
+        ->render( function ( array $attrs ): string {
+            return sprintf(
+                '<section class="hero hero--%s"><h1>%s</h1></section>',
+                esc_attr( $attrs['align'] ),
+                esc_html( $attrs['heading'] )
+            );
+        } )
+        ->register();
+} );
+```
+
+[Full documentation →](docs/blocks.md)
+
+### Widgets
+
+```php
+use WPFlint\Widgets\AbstractWidget;
+
+class TestimonialWidget extends AbstractWidget {
+    protected string $widget_title = 'Testimonial';
+    protected string $description  = 'Displays a customer quote.';
+
+    protected function output( array $args, array $instance ): void {
+        echo $args['before_widget'];
+        echo '<blockquote>' . esc_html( $instance['quote'] ?? '' ) . '</blockquote>';
+        echo $args['after_widget'];
+    }
+
+    protected function fields( array $instance ): void {
+        echo '<p><label>Quote:<br>
+            <textarea name="' . esc_attr( $this->get_field_name( 'quote' ) ) . '">'
+            . esc_textarea( $instance['quote'] ?? '' ) . '</textarea></label></p>';
+    }
+
+    protected function sanitize( array $new, array $old ): array {
+        return array( 'quote' => sanitize_textarea_field( $new['quote'] ?? '' ) );
+    }
+}
+
+// Register in service provider boot():
+TestimonialWidget::register();
+```
+
+[Full documentation →](docs/widgets.md)
+
+---
+
+## Templates & Mail
+
+### Views
+
+```php
+use WPFlint\View\View;
+
+// Set base path once (or register ViewServiceProvider):
+View::set_base_path( plugin_dir_path( __FILE__ ) . 'resources/views' );
+
+// Render to string:
+$html = View::make( 'admin.settings' )
+    ->with( array( 'title' => 'Settings', 'options' => $opts ) )
+    ->render();
+
+// Output directly:
+View::make( 'partials.notice' )->with( 'message', 'Saved!' )->output();
+
+// Per-instance path override:
+View::make( 'email.welcome' )->from( '/custom/path/views' )->render();
+```
+
+**Template file** (`resources/views/admin/settings.php`):
+```php
+<div class="wrap">
+    <h1><?php echo esc_html( $title ); ?></h1>
+    <!-- $options is available as a local variable -->
+</div>
+```
+
+[Full documentation →](docs/view.md)
+
+### Mail
+
+```php
+use WPFlint\Mail\Mail;
+
+// Plain text:
+Mail::to( 'user@example.com' )
+    ->subject( 'Welcome!' )
+    ->message( 'Thanks for signing up.' )
+    ->send();
+
+// HTML:
+Mail::to( 'user@example.com' )
+    ->subject( 'Order Confirmed' )
+    ->from( 'shop@example.com', 'My Shop' )
+    ->html( '<h1>Order confirmed!</h1>' )
+    ->cc( 'admin@example.com' )
+    ->send();
+
+// PHP template:
+Mail::to( $user->user_email )
+    ->subject( 'Order #' . $order->id )
+    ->from( get_option( 'admin_email' ), get_bloginfo( 'name' ) )
+    ->template( 'emails.order-confirmed', array( 'order' => $order ) )
+    ->attach( '/var/www/uploads/invoice.pdf' )
+    ->send();
+```
+
+[Full documentation →](docs/mail.md)
+
+---
+
+## Plugin Infrastructure
+
+### Plugin Lifecycle
+
+```php
+use WPFlint\Lifecycle\Lifecycle;
+
+Lifecycle::for( __FILE__ )
+    ->on_activate( function () {
+        global $wpdb;
+        // Create tables, set defaults...
+    } )
+    ->on_deactivate( function () {
+        wp_clear_scheduled_hook( 'my_plugin_daily' );
+    } )
+    ->on_uninstall( \MyPlugin\Uninstaller::class )  // must be a named class
+    ->register();
+```
+
+[Full documentation →](docs/lifecycle.md)
+
+### Asset Manager
+
+```php
+use WPFlint\Assets\Script;
+use WPFlint\Assets\Style;
+
+// Direct enqueueing:
+Script::make( 'my-app', plugin_dir_url( __FILE__ ) . 'app.js' )
+    ->deps( array( 'jquery' ) )
+    ->version( '1.0' )
+    ->footer()
+    ->localize( 'MyApp', array( 'ajaxUrl' => admin_url( 'admin-ajax.php' ) ) )
+    ->only_on( 'is_admin' )
+    ->enqueue();
+
+Style::make( 'my-style', plugin_dir_url( __FILE__ ) . 'app.css' )
+    ->version( '1.0' )
+    ->only_on( fn() => is_page( 'shop' ) )
+    ->enqueue();
+
+// Via AssetManager (auto-hooked to wp_enqueue_scripts + admin_enqueue_scripts):
+$manager = $app->make( \WPFlint\Assets\AssetManager::class );
+$manager->script( 'my-app', '...' )->footer()->version( '1.0' );
+$manager->style( 'my-style', '...' )->version( '1.0' );
+```
+
+[Full documentation →](docs/assets.md)
+
+### Events
 
 ```php
 use WPFlint\Events\Dispatcher;
-
-$dispatcher = new Dispatcher( $app );
-
-// Closure
-$dispatcher->listen( OrderPlaced::class, function ( OrderPlaced $event ) {
-    log_order( $event->order_id );
-} );
-
-// Class-based (must have a handle() method)
-$dispatcher->listen( OrderPlaced::class, SendConfirmation::class );
-
-// Array callable
-$dispatcher->listen( OrderPlaced::class, array( $handler, 'on_order' ) );
-```
-
-### Class Listeners
-
-```php
-class SendConfirmation {
-    public function handle( OrderPlaced $event ): void {
-        // send email using $event->order_id
-    }
-}
-```
-
-### Firing Events
-
-```php
-$dispatcher->fire( new OrderPlaced( 42, 99.50 ) );
-```
-
-### Stop Propagation
-
-```php
-$dispatcher->listen( OrderPlaced::class, function ( OrderPlaced $event ) {
-    $event->stop_propagation(); // subsequent listeners won't run
-} );
-```
-
-### WordPress Hook Bridge
-
-Bridge native WordPress hooks to typed events:
-
-```php
-$dispatcher->listen_wp( 'save_post', PostSaved::class, 10, 2 );
-
-// When save_post fires, PostSaved is constructed with the hook args
-// and dispatched through all registered listeners.
-```
-
-### Event Facade
-
-```php
 use WPFlint\Facades\Event;
 
-Event::listen( OrderPlaced::class, SendConfirmation::class );
+// Define an event:
+class OrderPlaced extends \WPFlint\Events\Event {
+    public function __construct( public int $order_id, public float $total ) {}
+}
+
+// Listen:
+Event::listen( OrderPlaced::class, SendConfirmationEmail::class );
+Event::listen( OrderPlaced::class, function ( OrderPlaced $e ) {
+    error_log( 'Order placed: ' . $e->order_id );
+} );
+
+// Fire:
 Event::fire( new OrderPlaced( 42, 99.50 ) );
-Event::forget( OrderPlaced::class );
-Event::has_listeners( OrderPlaced::class );
+
+// WordPress hook bridge:
 Event::listen_wp( 'save_post', PostSaved::class );
 ```
 
----
+[Full documentation →](docs/events.md)
 
-## Cache
-
-Multi-driver cache system with tag-based invalidation and fresh mode.
-
-### Basic Usage
-
-```php
-use WPFlint\Cache\CacheManager;
-
-$cache = new CacheManager( 'transient' );
-
-$cache->put( 'key', 'value', 300 );      // store for 5 minutes
-$cache->get( 'key' );                     // 'value'
-$cache->get( 'missing', 'default' );      // 'default'
-$cache->has( 'key' );                     // true
-$cache->forget( 'key' );                  // delete
-$cache->flush();                           // clear all
-```
-
-### Remember (Get or Set)
-
-```php
-$orders = $cache->remember( 'all_orders', 3600, function () {
-    return Order::all();
-} );
-```
-
-### Fresh Mode
-
-Bypass the cache, re-execute the callback, and store the new result:
-
-```php
-$orders = $cache->fresh()->remember( 'all_orders', 3600, function () {
-    return Order::all();
-} );
-
-// fresh() resets after one call.
-```
-
-### Tagged Cache
-
-Group cache keys by tags for bulk invalidation:
-
-```php
-// Store under tags
-$cache->tags( array( 'orders' ) )->remember( 'order_list', 300, function () {
-    return Order::all();
-} );
-
-$cache->tags( 'orders' )->put( 'order_42', $order, 600 );
-
-// Flush all keys under a tag
-$cache->tags( 'orders' )->flush();
-```
-
-### Cache Facade
+### Cache
 
 ```php
 use WPFlint\Facades\Cache;
 
 Cache::put( 'key', 'value', 300 );
-Cache::get( 'key' );
-Cache::remember( 'key', 3600, fn() => expensive_query() );
+Cache::get( 'key', 'default' );
+Cache::remember( 'all_orders', 3600, fn() => Order::all() );
+Cache::forget( 'key' );
+Cache::flush();
+
+// Tags:
+Cache::tags( 'orders' )->remember( 'order_list', 300, fn() => Order::all() );
 Cache::tags( 'orders' )->flush();
+
+// Bypass cache:
 Cache::fresh()->remember( 'key', 3600, $callback );
 ```
 
-### Drivers
+[Full documentation →](docs/cache.md)
 
-| Driver | Backend | Use Case |
-|--------|---------|----------|
-| `transient` | `get_transient()` / `set_transient()` | Default, works everywhere |
-| `object` | `wp_cache_get()` / `wp_cache_set()` | Persistent object cache (Redis, Memcached) |
-| `array` | In-memory PHP array | Testing |
+### Logging
 
 ```php
-$cache = new CacheManager( 'array' ); // for tests
+use WPFlint\Logging\Logger;
+
+$logger = new Logger( 'my-plugin', WP_CONTENT_DIR . '/logs/my-plugin.log' );
+
+$logger->info( 'Order placed', array( 'order_id' => 42 ) );
+$logger->warning( 'Low stock', array( 'product' => 'Widget', 'qty' => 2 ) );
+$logger->error( 'Payment failed', array( 'error' => $e->getMessage() ) );
+$logger->debug( 'Cache miss', array( 'key' => 'all_orders' ) );
 ```
 
----
+[Full documentation →](docs/logging.md)
 
-## Facades
-
-Static proxies that resolve their backing instance from the container at runtime.
-
-### Built-in Facades
-
-| Facade | Accessor | Resolves To |
-|--------|----------|-------------|
-| `Config` | `'config'` | `Repository` |
-| `Cache` | `'cache'` | `CacheManager` |
-| `Event` | `'events'` | `Dispatcher` |
-
-### Creating Custom Facades
+### Queue & Jobs
 
 ```php
-use WPFlint\Facades\Facade;
+use WPFlint\Queue\QueueManager;
 
-class Order extends Facade {
+class SendWelcomeEmail extends \WPFlint\Queue\Job {
+    public function __construct( private int $user_id ) {}
 
-    protected static function get_facade_accessor(): string {
-        return 'orders'; // container binding key
+    public function handle(): void {
+        $user = get_userdata( $this->user_id );
+        Mail::to( $user->user_email )->subject( 'Welcome!' )->send();
     }
 }
 
-// Usage:
-Order::find( 1 );
-Order::pending()->get_models();
+$queue = $app->make( QueueManager::class );
+$queue->push( new SendWelcomeEmail( $user->ID ) );
+$queue->push( new SendWelcomeEmail( $user->ID ), 300 ); // delay 5 min
 ```
 
-### Testing
+[Full documentation →](docs/queue.md)
 
-Clear cached instances in test tearDown:
+### Scheduler
 
 ```php
-Facade::clear_resolved_instances();
+use WPFlint\Scheduling\Scheduler;
+
+$scheduler = $app->make( Scheduler::class );
+
+$scheduler->call( fn() => Cache::flush() )
+    ->daily()
+    ->at( '02:00' );
+
+$scheduler->call( fn() => $migrator->run() )
+    ->weekly()
+    ->on( 'monday' );
+
+$scheduler->command( 'my-plugin/sync-products' )
+    ->hourly();
 ```
+
+[Full documentation →](docs/scheduling.md)
 
 ---
 
 ## WP-CLI Commands
 
-Dev-only commands excluded from production builds via `.distignore`.
+Dev-only commands, excluded from production builds via `.distignore`.
 
 ### Database
 
@@ -1195,12 +871,12 @@ Dev-only commands excluded from production builds via `.distignore`.
 | `wp wpflint migrate` | Run pending migrations |
 | `wp wpflint migrate --rollback` | Roll back last batch |
 | `wp wpflint migrate --rollback --steps=N` | Roll back N batches |
-| `wp wpflint migrate --fresh` | Drop all tables, re-run (with confirmation) |
+| `wp wpflint migrate --fresh` | Drop all + re-run (with confirmation) |
 | `wp wpflint migrate --status` | Show migration status |
 | `wp wpflint cache:clear` | Clear all application cache |
 | `wp wpflint cache:clear --tag=orders` | Clear a specific cache tag |
 
-### Code Generation
+### Code Generators
 
 | Command | Description |
 |---------|-------------|
@@ -1215,77 +891,65 @@ Dev-only commands excluded from production builds via `.distignore`.
 | `wp wpflint make:event <Name>` | Generate event stub |
 | `wp wpflint make:facade <Name>` | Generate facade stub |
 
-All `make:*` commands accept `--path=<dir>` to customize the output directory.
+All `make:*` commands accept `--path=<dir>` to customise the output directory.
+
+[Full documentation →](docs/console.md)
 
 ---
 
 ## Testing
 
-WPFlint uses PHPUnit 9 with [WP_Mock](https://github.com/10up/wp_mock) for mocking WordPress functions and [Brain\Monkey](https://github.com/Brain-WP/BrainMonkey) for hooks.
-
-### Running Tests
+WPFlint uses PHPUnit 9 with [WP_Mock](https://github.com/10up/wp_mock) and [Brain\Monkey](https://github.com/Brain-WP/BrainMonkey).
 
 ```bash
-composer test
+composer test    # run all tests
+composer lint    # check code style
+composer lint:fix # auto-fix code style
 ```
 
-### Test Structure
-
-Tests mirror the source directory structure:
+Test structure mirrors `src/`:
 
 ```
 tests/
   bootstrap.php
   ApplicationTest.php
   Container/ContainerTest.php
-  Providers/ServiceProviderTest.php
-  Config/RepositoryTest.php
-  Database/
-    Schema/BlueprintTest.php
-    Migrations/MigratorTest.php
-    ORM/ModelTest.php
-    ORM/QueryBuilderTest.php
-    ORM/RelationTest.php
-  Http/
-    RequestTest.php
-    ResponseTest.php
-    RouterTest.php
-    MiddlewareTest.php
-    PipelineTest.php
-  Cache/
-    CacheManagerTest.php
-    TaggedCacheTest.php
+  Http/RouterTest.php
+  Database/ORM/ModelTest.php
+  Cache/CacheManagerTest.php
   Events/DispatcherTest.php
-  Console/CommandTest.php
-  Integration/FullPluginTest.php
+  Admin/NoticeTest.php, MetaBoxTest.php, AdminTest.php
+  Assets/AssetTest.php
+  Blocks/BlockTest.php
+  Lifecycle/LifecycleTest.php
+  Mail/MailTest.php
+  Settings/SettingsTest.php
+  Shortcodes/ShortcodeTest.php
+  View/ViewTest.php
+  Widgets/WidgetTest.php
+  Http/RestAuthTest.php
+  ...
 ```
 
-### Writing Tests
+Writing a test:
 
 ```php
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
-use Mockery;
 
-class MyTest extends TestCase {
+class MyFeatureTest extends TestCase {
 
     public function setUp(): void {
-        parent::setUp();
         WP_Mock::setUp();
     }
 
     public function tearDown(): void {
         WP_Mock::tearDown();
-        Mockery::close();
-        parent::tearDown();
     }
 
-    public function testSomething(): void {
-        WP_Mock::userFunction( 'get_option', array(
-            'return' => 'value',
-        ) );
-
-        // your test...
+    public function test_something(): void {
+        WP_Mock::userFunction( 'get_option' )->andReturn( 'value' );
+        $this->assertSame( 'value', get_option( 'my_key' ) );
     }
 }
 ```
@@ -1294,15 +958,16 @@ class MyTest extends TestCase {
 
 ## WP.org Compliance
 
-WPFlint is built for WordPress.org plugin directory compliance:
+WPFlint is designed for WordPress.org plugin directory submission:
 
 - All database queries use `$wpdb->prepare()`
 - All user input sanitized with `sanitize_*()` functions
 - All output escaped with `esc_*()` functions
-- AJAX handlers verify nonces via `check_ajax_referer()` and capabilities via `current_user_can()`
-- All translatable strings use `__()` or `_e()` with proper text domains
+- AJAX handlers verify nonces (`check_ajax_referer()`) and capabilities (`current_user_can()`)
+- Metabox save callbacks verify nonces, capability, and skip autosaves
+- All translatable strings use `__()` or `_e()` with text domains
 - No `eval()`, `exec()`, or `system()` calls
-- `.distignore` excludes dev-only files from distribution
+- `.distignore` excludes: `tests/`, `vendor/`, `.claude/`, `src/Console/`, `docs/`, `composer.json`
 
 ---
 
@@ -1310,81 +975,55 @@ WPFlint is built for WordPress.org plugin directory compliance:
 
 ```
 src/
-  Application.php               # Singleton bootstrap, extends Container
-  Container/
-    Container.php                # PSR-11 IoC container
-    ContextualBindingBuilder.php # when()->needs()->give() API
-  Providers/
-    ServiceProvider.php          # Base provider class
-    FrameworkServiceProvider.php  # Core framework bindings
-  Config/
-    Repository.php               # Dot-notation config manager
-    ConfigServiceProvider.php    # Registers config singleton
+  Application.php                 # Singleton bootstrap
+  Container/Container.php         # PSR-11 IoC container
+  Providers/ServiceProvider.php   # Base provider
+  Config/Repository.php           # Dot-notation config
   Http/
-    Router.php                   # AJAX + REST route registration
-    RestRouter.php               # REST API route builder
-    Route.php                    # Single route definition
-    Controller.php               # AJAX controller base
-    RestController.php           # REST controller base
-    Request.php                  # Input + validation + sanitization
-    Response.php                 # Unified response builder
-    Pipeline.php                 # Middleware pipeline
-    HttpServiceProvider.php      # Registers router
-    Middleware/
-      MiddlewareInterface.php    # Contract for middleware
-      VerifyNonce.php            # nonce:{action}
-      CheckCapability.php        # can:{capability}
-      ThrottleRequests.php       # throttle:{max},{minutes}
+    Router.php                    # AJAX + REST routing
+    Controller.php                # AJAX controller base
+    RestController.php            # REST controller base
+    Request.php                   # Input + validation
+    Response.php                  # Response builder
+    Pipeline.php                  # Middleware pipeline
+    RestAuth.php                  # REST auth helpers
+    Middleware/                   # nonce, can, throttle
   Database/
-    Schema/
-      Schema.php                 # Table create/drop/modify
-      Blueprint.php              # Column definitions
-      ColumnDefinition.php       # Column modifiers
-      ForeignKeyDefinition.php   # Foreign key builder
-    Migrations/
-      Migration.php              # Base migration class
-      Migrator.php               # Run/rollback orchestrator
-      MigrationRepository.php   # Tracks run migrations
-    ORM/
-      QueryBuilder.php           # Fluent SQL builder
-      Model.php                  # Active Record base
-      ModelQueryBuilder.php      # Model-aware query builder
-      ModelNotFoundException.php # Exception for find_or_fail
-      Relation.php               # Base relation
-      HasOne.php                 # One-to-one
-      HasMany.php                # One-to-many
-      BelongsTo.php              # Inverse one-to-one/many
-      RawExpression.php          # Raw SQL fragments
+    Schema/                       # Blueprint, Schema
+    Migrations/                   # Migrator, Migration
+    ORM/                          # Model, QueryBuilder, Relations
   Cache/
-    CacheManager.php             # Central cache API
-    CacheDriverInterface.php     # Driver contract
-    TaggedCache.php              # Tag-based invalidation
-    CacheServiceProvider.php     # Registers cache singleton
-    Drivers/
-      TransientDriver.php        # WordPress transients
-      ObjectCacheDriver.php      # wp_cache_* with fallback
-      ArrayDriver.php            # In-memory (testing)
+    CacheManager.php              # Multi-driver cache
+    TaggedCache.php               # Tag-based invalidation
+    Drivers/                      # Transient, ObjectCache, Array
   Events/
-    Event.php                    # Base event class
-    Dispatcher.php               # Event dispatcher
-    EventServiceProvider.php     # Registers dispatcher
-  Facades/
-    Facade.php                   # Static proxy base
-    Config.php                   # Config facade
-    Cache.php                    # Cache facade
-    Event.php                    # Event facade
-  Console/                       # Dev-only (excluded from prod)
-    Command.php                  # Base WP-CLI command
-    MigrateCommand.php           # Database migrations
-    CacheClearCommand.php        # Cache clearing
-    MakeControllerCommand.php    # make:controller
-    MakeMiddlewareCommand.php    # make:middleware
-    MakeRequestCommand.php       # make:request
-    MakeMigrationCommand.php     # make:migration
-    MakeModelCommand.php         # make:model
-    MakeProviderCommand.php      # make:provider
-    MakeEventCommand.php         # make:event
-    MakeFacadeCommand.php        # make:facade
+    Dispatcher.php                # Typed event system
+    Event.php                     # Base event
+  Facades/                        # Config, Cache, Event
+  Lifecycle/Lifecycle.php         # Activation/deactivation/uninstall
+  Admin/
+    AdminPage.php                 # Menu + page builder
+    Notice.php                    # Flash + persistent notices
+    MetaBox.php                   # Metabox builder
+    MetaBoxField.php              # Individual field renderer/saver
+  Settings/
+    Settings.php                  # Settings API builder
+    Section.php                   # Settings section
+    Field.php                     # Settings field
+  Assets/
+    AssetManager.php              # Collect + enqueue assets
+    Script.php                    # wp_enqueue_script wrapper
+    Style.php                     # wp_enqueue_style wrapper
+  Shortcodes/Shortcode.php        # add_shortcode wrapper
+  View/View.php                   # PHP template renderer
+  Mail/Mail.php                   # wp_mail wrapper
+  Blocks/Block.php                # register_block_type wrapper
+  Widgets/AbstractWidget.php      # WP_Widget abstraction
+  Logging/Logger.php              # File-based logger
+  Queue/                          # Job queue system
+  Scheduling/                     # WP-Cron scheduler
+  WordPress/                      # WP core model wrappers
+  Console/                        # WP-CLI commands (dev only)
 ```
 
 ---
