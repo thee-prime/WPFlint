@@ -55,11 +55,11 @@ class MakeModelCommand extends Command {
 		$this->write_file( $filepath, $stub );
 
 		if ( isset( $assoc_args['migration'] ) ) {
-			$table_name     = $this->snake_case( $name ) . 's';
 			$migration_name = 'Create' . $name . 'sTable';
-
-			$migration_cmd = new MakeMigrationCommand();
-			$migration_cmd->__invoke( array( $migration_name ), $assoc_args );
+			$migration_cmd  = new MakeMigrationCommand();
+			// Pass empty assoc_args so migration uses its own default path (database/migrations),
+			// not the model command's WP-CLI-injected --path default (app/Models).
+			$migration_cmd->__invoke( array( $migration_name ), array() );
 		}
 	}
 
