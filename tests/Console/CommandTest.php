@@ -269,8 +269,8 @@ class CommandTest extends TestCase {
 
 		$this->assertFileExists( $this->tmp_dir . '/app/Models/Product.php' );
 
-		// MakeModelCommand passes $assoc_args through, so migration uses same path.
-		$migration_files = glob( $this->tmp_dir . '/app/Models/*_create_products_table.php' );
+		// Migration is placed in database/migrations/ derived from the model's base dir.
+		$migration_files = glob( $this->tmp_dir . '/database/migrations/*_create_products_table.php' );
 		$this->assertNotEmpty( $migration_files );
 	}
 
@@ -455,8 +455,7 @@ class CommandTest extends TestCase {
 	 * @return string
 	 */
 	private function relative_path(): string {
-		$abspath = defined( 'ABSPATH' ) ? ABSPATH : '';
-		return str_replace( rtrim( $abspath, '/' ), '', $this->tmp_dir );
+		return $this->tmp_dir;
 	}
 
 	/**

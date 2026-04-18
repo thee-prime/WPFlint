@@ -87,6 +87,8 @@ class ViteAssets {
 	protected static array $module_handles = array();
 
 	/**
+	 * Constructor.
+	 *
 	 * @param string $plugin_dir Absolute path to the plugin root.
 	 * @param string $plugin_url Public URL to the plugin root (trailing slash).
 	 * @param int    $dev_port   Vite dev server port (default 5173).
@@ -292,7 +294,8 @@ class ViteAssets {
 		$path = $this->manifest_path();
 
 		if ( ! file_exists( $path ) ) {
-			return $this->manifest = array();
+			$this->manifest = array();
+			return $this->manifest;
 		}
 
 		$json           = (string) file_get_contents( $path );

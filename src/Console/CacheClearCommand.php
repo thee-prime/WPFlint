@@ -25,6 +25,22 @@ use WPFlint\Cache\CacheManager;
 class CacheClearCommand extends Command {
 
 	/**
+	 * Pre-resolved cache manager (set via constructor for testing).
+	 *
+	 * @var CacheManager|null
+	 */
+	private ?CacheManager $cache;
+
+	/**
+	 * Constructor.
+	 *
+	 * @param CacheManager|null $cache Optional pre-resolved instance (useful in tests).
+	 */
+	public function __construct( ?CacheManager $cache = null ) {
+		$this->cache = $cache;
+	}
+
+	/**
 	 * Clear the application cache.
 	 *
 	 * ## OPTIONS
@@ -37,7 +53,7 @@ class CacheClearCommand extends Command {
 	 * @return void
 	 */
 	public function __invoke( array $args, array $assoc_args ): void {
-		$cache = Application::get_instance()->make( CacheManager::class );
+		$cache = $this->cache ?? Application::get_instance()->make( CacheManager::class );
 
 		if ( isset( $assoc_args['tag'] ) ) {
 			$tag = $assoc_args['tag'];

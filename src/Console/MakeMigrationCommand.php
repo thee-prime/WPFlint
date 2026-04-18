@@ -44,7 +44,7 @@ class MakeMigrationCommand extends Command {
 		$path = $assoc_args['path'] ?? 'database/migrations';
 
 		$base_dir = getcwd();
-		$dir      = rtrim( $base_dir, '/' ) . '/' . ltrim( $path, '/' );
+		$dir      = '/' === $path[0] ? $path : rtrim( $base_dir, '/' ) . '/' . ltrim( $path, '/' );
 
 		$filename = gmdate( 'Y_m_d_His' ) . '_' . $this->snake_case( $name ) . '.php';
 		$filepath = $dir . '/' . $filename;

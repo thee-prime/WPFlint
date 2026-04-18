@@ -44,7 +44,7 @@ class MakeMiddlewareCommand extends Command {
 		$path = $assoc_args['path'] ?? 'app/Http/Middleware';
 
 		$base_dir = getcwd();
-		$dir      = rtrim( $base_dir, '/' ) . '/' . ltrim( $path, '/' );
+		$dir      = '/' === $path[0] ? $path : rtrim( $base_dir, '/' ) . '/' . ltrim( $path, '/' );
 		$filepath = $dir . '/' . $name . '.php';
 
 		$stub = $this->get_stub( $name );

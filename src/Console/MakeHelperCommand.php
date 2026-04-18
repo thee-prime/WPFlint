@@ -49,7 +49,7 @@ class MakeHelperCommand extends Command {
 		}
 
 		$base_dir = getcwd();
-		$dir      = rtrim( $base_dir, '/' ) . '/' . ltrim( $path, '/' );
+		$dir      = '/' === $path[0] ? $path : rtrim( $base_dir, '/' ) . '/' . ltrim( $path, '/' );
 		$filepath = $dir . '/helpers.php';
 
 		$stub = $this->get_stub( $prefix );

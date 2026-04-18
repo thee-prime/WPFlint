@@ -48,7 +48,7 @@ class MakeModelCommand extends Command {
 		$path = $assoc_args['path'] ?? 'app/Models';
 
 		$base_dir = getcwd();
-		$dir      = rtrim( $base_dir, '/' ) . '/' . ltrim( $path, '/' );
+		$dir      = '/' === $path[0] ? $path : rtrim( $base_dir, '/' ) . '/' . ltrim( $path, '/' );
 		$filepath = $dir . '/' . $name . '.php';
 
 		$stub = $this->get_stub( $name );
@@ -57,9 +57,10 @@ class MakeModelCommand extends Command {
 		if ( isset( $assoc_args['migration'] ) ) {
 			$migration_name = 'Create' . $name . 'sTable';
 			$migration_cmd  = new MakeMigrationCommand();
-			// Pass empty assoc_args so migration uses its own default path (database/migrations),
-			// not the model command's WP-CLI-injected --path default (app/Models).
-			$migration_cmd->__invoke( array( $migration_name ), array() );
+			// Derive plugin root by going 2 dirs up from the model dir (e.g. app/Models → root).
+			$plugin_root   = dirname( dirname( $dir ) );
+			$migration_dir = $plugin_root . '/database/migrations';
+			$migration_cmd->__invoke( array( $migration_name ), array( 'path' => $migration_dir ) );
 		}
 	}
 

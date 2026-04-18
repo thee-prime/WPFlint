@@ -29,21 +29,32 @@ use WPFlint\Database\Migrations\MigrationRepository;
 class MigrateCommand extends Command {
 
 	/**
-	 * Migrator instance — resolved from the container on first call.
+	 * Migrator instance.
 	 *
 	 * @var Migrator|null
 	 */
-	private ?Migrator $migrator = null;
+	private ?Migrator $migrator;
 
 	/**
-	 * Migration repository — resolved from the container on first call.
+	 * Migration repository.
 	 *
 	 * @var MigrationRepository|null
 	 */
-	private ?MigrationRepository $repository = null;
+	private ?MigrationRepository $repository;
 
 	/**
-	 * Resolve dependencies from the Application container.
+	 * Constructor.
+	 *
+	 * @param Migrator|null            $migrator   Optional pre-resolved instance (useful in tests).
+	 * @param MigrationRepository|null $repository Optional pre-resolved instance (useful in tests).
+	 */
+	public function __construct( ?Migrator $migrator = null, ?MigrationRepository $repository = null ) {
+		$this->migrator   = $migrator;
+		$this->repository = $repository;
+	}
+
+	/**
+	 * Resolve dependencies from the Application container when not injected via constructor.
 	 *
 	 * @return void
 	 */
@@ -52,8 +63,9 @@ class MigrateCommand extends Command {
 			return;
 		}
 		$app              = Application::get_instance();
-		$this->migrator   = $app->make( Migrator::class );
-		$this->repository = $app->make( MigrationRepository::class );
+		$plugin_slug      = basename( $app->base_path() );
+		$this->repository = new MigrationRepository( $plugin_slug );
+		$this->migrator   = new Migrator( $this->repository );
 	}
 
 	/**
