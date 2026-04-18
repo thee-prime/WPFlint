@@ -11,6 +11,7 @@ declare(strict_types=1);
 
 namespace WPFlint\Console;
 
+use WPFlint\Application;
 use WPFlint\Database\Migrations\Migrator;
 use WPFlint\Database\Migrations\MigrationRepository;
 
@@ -28,28 +29,31 @@ use WPFlint\Database\Migrations\MigrationRepository;
 class MigrateCommand extends Command {
 
 	/**
-	 * Migrator instance.
+	 * Migrator instance — resolved from the container on first call.
 	 *
-	 * @var Migrator
+	 * @var Migrator|null
 	 */
-	private Migrator $migrator;
+	private ?Migrator $migrator = null;
 
 	/**
-	 * Migration repository.
+	 * Migration repository — resolved from the container on first call.
 	 *
-	 * @var MigrationRepository
+	 * @var MigrationRepository|null
 	 */
-	private MigrationRepository $repository;
+	private ?MigrationRepository $repository = null;
 
 	/**
-	 * Constructor.
+	 * Resolve dependencies from the Application container.
 	 *
-	 * @param Migrator            $migrator   Migrator instance.
-	 * @param MigrationRepository $repository Migration repository.
+	 * @return void
 	 */
-	public function __construct( Migrator $migrator, MigrationRepository $repository ) {
-		$this->migrator   = $migrator;
-		$this->repository = $repository;
+	private function resolve(): void {
+		if ( null !== $this->migrator ) {
+			return;
+		}
+		$app              = Application::get_instance();
+		$this->migrator   = $app->make( Migrator::class );
+		$this->repository = $app->make( MigrationRepository::class );
 	}
 
 	/**
@@ -77,6 +81,7 @@ class MigrateCommand extends Command {
 	 * @return void
 	 */
 	public function __invoke( array $args, array $assoc_args ): void {
+		$this->resolve();
 		$this->ensure_repository();
 
 		if ( isset( $assoc_args['status'] ) ) {

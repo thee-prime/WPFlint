@@ -47,7 +47,7 @@ class MakeControllerCommand extends Command {
 		$name = $args[0];
 		$path = $assoc_args['path'] ?? 'app/Http/Controllers';
 
-		$base_dir = defined( 'ABSPATH' ) ? ABSPATH : '';
+		$base_dir = getcwd();
 		$dir      = rtrim( $base_dir, '/' ) . '/' . ltrim( $path, '/' );
 		$filepath = $dir . '/' . $name . '.php';
 

@@ -43,7 +43,7 @@ class MakeEventCommand extends Command {
 		$name = $args[0];
 		$path = $assoc_args['path'] ?? 'app/Events';
 
-		$base_dir = defined( 'ABSPATH' ) ? ABSPATH : '';
+		$base_dir = getcwd();
 		$dir      = rtrim( $base_dir, '/' ) . '/' . ltrim( $path, '/' );
 		$filepath = $dir . '/' . $name . '.php';
 

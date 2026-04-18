@@ -11,6 +11,7 @@ declare(strict_types=1);
 
 namespace WPFlint\Console;
 
+use WPFlint\Application;
 use WPFlint\Cache\CacheManager;
 
 /**
@@ -22,22 +23,6 @@ use WPFlint\Cache\CacheManager;
  *     wp wpflint cache:clear --tag=orders
  */
 class CacheClearCommand extends Command {
-
-	/**
-	 * Cache manager.
-	 *
-	 * @var CacheManager
-	 */
-	private CacheManager $cache;
-
-	/**
-	 * Constructor.
-	 *
-	 * @param CacheManager $cache Cache manager.
-	 */
-	public function __construct( CacheManager $cache ) {
-		$this->cache = $cache;
-	}
 
 	/**
 	 * Clear the application cache.
@@ -52,9 +37,11 @@ class CacheClearCommand extends Command {
 	 * @return void
 	 */
 	public function __invoke( array $args, array $assoc_args ): void {
+		$cache = Application::get_instance()->make( CacheManager::class );
+
 		if ( isset( $assoc_args['tag'] ) ) {
 			$tag = $assoc_args['tag'];
-			$this->cache->tags( $tag )->flush();
+			$cache->tags( $tag )->flush();
 			$this->success(
 				sprintf(
 					/* translators: %s: cache tag name */
@@ -65,7 +52,7 @@ class CacheClearCommand extends Command {
 			return;
 		}
 
-		$this->cache->flush();
+		$cache->flush();
 		$this->success( __( 'Application cache cleared.', 'wpflint' ) );
 	}
 }

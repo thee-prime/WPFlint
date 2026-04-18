@@ -48,7 +48,7 @@ class MakeHelperCommand extends Command {
 			return;
 		}
 
-		$base_dir = defined( 'ABSPATH' ) ? ABSPATH : '';
+		$base_dir = getcwd();
 		$dir      = rtrim( $base_dir, '/' ) . '/' . ltrim( $path, '/' );
 		$filepath = $dir . '/helpers.php';
 
