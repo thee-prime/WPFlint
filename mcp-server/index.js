@@ -7,8 +7,14 @@ import { join } from "path";
 
 // ─── SESSION STATE ────────────────────────────────────────────────────────────
 const S = { ns: "App", slug: "my-plugin", td: "my-plugin", path: "", ok: false };
-const ns  = (sub) => `${S.ns}\\${sub}`;
-const td  = ()    => S.td;
+const ns    = (sub) => `${S.ns}\\${sub}`;
+const fwNs  = (sub) => `${S.ns}\\WPFlint\\${sub}`;
+const td    = ()    => S.td;
+
+// After Strauss, framework lives at MyShop\WPFlint\... — rewrite any bare WPFlint\ in generated code.
+function prefixFw(code) {
+  return code.replace(/(?<![A-Za-z0-9_\\])WPFlint\\/g, `${S.ns}\\WPFlint\\`);
+}
 
 // ─── KNOWLEDGE BASE ───────────────────────────────────────────────────────────
 const KB = {
@@ -1493,10 +1499,10 @@ server.tool("wpflint_init",
       const pkg   = JSON.parse(readFileSync(join(project_path,'composer.json'),'utf8'));
       const psr4  = pkg?.autoload?.['psr-4'] || {};
       const nsKey = Object.keys(psr4)[0] || 'App\\';
-      S.namespace = nsKey.replace(/\\+$/,'');
+      S.ns   = nsKey.replace(/\\+$/,'');
       const parts = (pkg.name||'vendor/my-plugin').split('/');
-      S.slug      = parts[1] || parts[0] || 'my-plugin';
-      S.td        = S.slug;
+      S.slug = parts[1] || parts[0] || 'my-plugin';
+      S.td   = S.slug;
       S.path      = project_path;
       S.ok        = true;
     } catch(e) {
@@ -1544,7 +1550,7 @@ server.tool("wpflint_make",
       case 'command':         code = genCommand(p.name); break;
       case 'job':             code = genJob(p.name, p.queue, p.tries); break;
     }
-    return { content: [{ type:"text", text: code }] };
+    return { content: [{ type:"text", text: prefixFw(code) }] };
   }
 );
 
@@ -1582,7 +1588,7 @@ server.tool("wpflint_admin",
       case 'metabox':  code = genMetaBox(p.id, p.title, p.screen, p.meta_fields); break;
       case 'notice':   code = genNotice(p.message, p.notice_type, p.dismissible); break;
     }
-    return { content: [{ type:"text", text: code }] };
+    return { content: [{ type:"text", text: prefixFw(code) }] };
   }
 );
 
@@ -1630,7 +1636,7 @@ server.tool("wpflint_content",
       case 'block':      code = genBlock(p.block_name, p.block_title, p.category, p.dynamic); break;
       case 'widget':     code = genWidget(p.singular+'Widget', p.widget_title, p.widget_description); break;
     }
-    return { content: [{ type:"text", text: code }] };
+    return { content: [{ type:"text", text: prefixFw(code) }] };
   }
 );
 
@@ -1677,7 +1683,7 @@ server.tool("wpflint_http",
           `RestAuth::require_capability( 'manage_options' ) // bool`,
         ].join('\n'); break;
     }
-    return { content: [{ type:"text", text: code }] };
+    return { content: [{ type:"text", text: prefixFw(code) }] };
   }
 );
 
@@ -1705,7 +1711,7 @@ server.tool("wpflint_asset",
       const localizeLine = p.localize_key ? `\n\t->localize( '${p.localize_key}', array(\n\t\t${p.localize_data}\n\t) )` : '';
       code = `use WPFlint\\Assets\\Script;\n\nScript::make( '${p.handle}', ${srcExpr} )\n\t->version( '${p.version}' )${depsLine}${footerLine}${localizeLine}\n\t->enqueue();`;
     }
-    return { content: [{ type:"text", text: code }] };
+    return { content: [{ type:"text", text: prefixFw(code) }] };
   }
 );
 
@@ -1729,7 +1735,7 @@ server.tool("wpflint_system",
       case 'view':      code = genView(p.view_name, p.variables); break;
       case 'mail':      code = genMail(p.to, p.subject, p.body_type, p.view_template); break;
     }
-    return { content: [{ type:"text", text: code }] };
+    return { content: [{ type:"text", text: prefixFw(code) }] };
   }
 );
 
@@ -1755,7 +1761,7 @@ server.tool("wpflint_docs",
 server.tool("wpflint_search",
   "Get the one correct WPFlint answer for a developer question. Returns a ready-to-use code snippet.",
   { query: z.string().describe("Natural language question, e.g. 'how do I cache a DB query'") },
-  async ({ query }) => ({ content: [{ type:"text", text: search(query) }] })
+  async ({ query }) => ({ content: [{ type:"text", text: prefixFw(search(query)) }] })
 );
 
 // ─── TOOL 9: wpflint_scaffold ────────────────────────────────────────────────
@@ -1768,7 +1774,7 @@ server.tool("wpflint_scaffold",
   async ({ slug, providers }) => {
     const s = slug || S.slug;
     const n = S.namespace;
-    return { content: [{ type:"text", text: genScaffold(s, n, providers) }] };
+    return { content: [{ type:"text", text: prefixFw(genScaffold(s, n, providers)) }] };
   }
 );
 
